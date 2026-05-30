@@ -10,35 +10,38 @@ import io
 STAMP_W, STAMP_H = 370, 320
 
 FONT_DIR = Path(__file__).parent
-_BUNDLED = {
-    "regular": FONT_DIR / "NotoSansJP-Regular.otf",
-    "bold":    FONT_DIR / "NotoSansJP-Bold.otf",
+
+# フォント種別: "sans"=ゴシック / "sans-bold"=ゴシック太 / "round"=丸ゴシック /
+#              "round-bold"=丸ゴシック太 / "serif"=明朝
+_BUNDLED: dict[str, list[Path]] = {
+    "sans":       [FONT_DIR / "NotoSansJP-Regular.otf"],
+    "sans-bold":  [FONT_DIR / "NotoSansJP-Bold.otf"],
+    "round":      [FONT_DIR / "MPLUSRounded-Regular.ttf"],
+    "round-bold": [FONT_DIR / "MPLUSRounded-Bold.ttf"],
+    "serif":      [FONT_DIR / "NotoSerifJP-Regular.otf"],
 }
-_SYSTEM_FONTS = {
-    "regular": [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/System/Library/Fonts/ヒラギノ丸ゴ ProN W4.ttc",
-    ],
-    "bold": [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-        "/System/Library/Fonts/ヒラギノ角ゴシック W8.ttc",
-    ],
+_SYSTEM_FONTS: dict[str, list[str]] = {
+    "sans":      ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                  "/System/Library/Fonts/ヒラギノ丸ゴ ProN W4.ttc"],
+    "sans-bold": ["/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+                  "/System/Library/Fonts/ヒラギノ角ゴシック W8.ttc"],
+    "serif":     ["/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"],
 }
 _font_cache: dict = {}
 
 
-def get_font(weight: str, size: int) -> ImageFont.FreeTypeFont:
-    key = (weight, size)
+def get_font(style_key: str, size: int) -> ImageFont.FreeTypeFont:
+    key = (style_key, size)
     if key in _font_cache:
         return _font_cache[key]
-    bundled = _BUNDLED.get(weight, _BUNDLED["regular"])
-    if bundled.exists():
-        f = ImageFont.truetype(str(bundled), size)
-        _font_cache[key] = f
-        return f
-    for fp in _SYSTEM_FONTS.get(weight, _SYSTEM_FONTS["regular"]):
+
+    for path in _BUNDLED.get(style_key, _BUNDLED["sans"]):
+        if path.exists():
+            f = ImageFont.truetype(str(path), size)
+            _font_cache[key] = f
+            return f
+
+    for fp in _SYSTEM_FONTS.get(style_key, _SYSTEM_FONTS["sans"]):
         if os.path.exists(fp):
             try:
                 f = ImageFont.truetype(fp, size)
@@ -46,12 +49,12 @@ def get_font(weight: str, size: int) -> ImageFont.FreeTypeFont:
                 return f
             except Exception:
                 continue
-    fallback = _BUNDLED["regular"]
-    if fallback.exists():
-        f = ImageFont.truetype(str(fallback), size)
-        _font_cache[key] = f
-        return f
-    raise RuntimeError("フォントが見つかりません")
+
+    # 最終フォールバック
+    fallback = _BUNDLED["sans"][0]
+    f = ImageFont.truetype(str(fallback), size)
+    _font_cache[key] = f
+    return f
 
 
 # ── テキストスタイルのキーワード→色マッピング ──────────────────
@@ -72,6 +75,22 @@ _COLOR_KEYWORDS: list[tuple[list[str], tuple, tuple]] = [
 _DEFAULT_GRAD = ((50, 50, 50), (20, 20, 20))
 
 
+_FONT_KEYWORDS: list[tuple[list[str], str]] = [
+    (["丸ゴシック", "まるごしっく", "丸文字", "ポップ", "ふわふわ", "かわいい", "ラウンド", "pop"], "round-bold"),
+    (["丸ゴシック細", "ポップ細", "やわらか"],                                                     "round"),
+    (["明朝", "みんちょう", "serif", "和風", "筆"],                                                "serif"),
+    (["ゴシック太", "太字", "ボールド", "インパクト", "強調"],                                      "sans-bold"),
+    (["ゴシック", "gothic", "sans"],                                                              "sans"),
+]
+
+
+def _detect_font_key(text_style: str) -> str:
+    for keywords, font_key in _FONT_KEYWORDS:
+        if any(kw in text_style for kw in keywords):
+            return font_key
+    return "sans"
+
+
 def _parse_text_style(text_style: str) -> dict:
     """text_styleの文字列からスタイル情報を抽出。"""
     grad = _DEFAULT_GRAD
@@ -80,17 +99,22 @@ def _parse_text_style(text_style: str) -> dict:
             grad = (c1, c2)
             break
 
+    font_key = _detect_font_key(text_style)
+    is_bold = "bold" in font_key
+
     outline_color = (255, 255, 255)
     outline_w = 5
 
-    bold = any(kw in text_style for kw in ["ボールド", "太字", "ゴシック", "ポップ", "元気"])
+    effect = "bounce" if is_bold else "standard"
+    if any(kw in text_style for kw in ["波", "ウェーブ", "wavy", "ゆらゆら"]):
+        effect = "wavy"
 
     return {
         "grad": list(grad),
         "outline": outline_color,
         "outline_w": outline_w,
-        "weight": "bold" if bold else "regular",
-        "effect": "bounce" if bold else "standard",
+        "font_key": font_key,
+        "effect": effect,
         "shadow": (0, 0, 0, 130),
     }
 
@@ -135,13 +159,13 @@ def _wrap(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
     return lines
 
 
-def _auto_size(text: str, weight: str, max_size: int, max_w: int) -> tuple[int, list[str]]:
+def _auto_size(text: str, font_key: str, max_size: int, max_w: int) -> tuple[int, list[str]]:
     for sz in range(max_size, 30, -2):
-        font = get_font(weight, sz)
+        font = get_font(font_key, sz)
         lines = _wrap(text, font, max_w)
         if len(lines) <= 2:
             return sz, lines
-    font = get_font(weight, 32)
+    font = get_font(font_key, 32)
     return 32, _wrap(text, font, max_w)
 
 
@@ -164,13 +188,13 @@ def add_styled_text(stamp: Image.Image, phrase: str, text_style: str) -> Image.I
         return stamp
 
     style = _parse_text_style(text_style)
-    weight = style["weight"]
+    font_key = style["font_key"]
     ow = style["outline_w"]
     margin = 14
     max_w = STAMP_W - margin * 2 - ow * 2
 
-    font_size, lines = _auto_size(phrase, weight, 76, max_w)
-    font = get_font(weight, font_size)
+    font_size, lines = _auto_size(phrase, font_key, 76, max_w)
+    font = get_font(font_key, font_size)
     effect = style["effect"]
     line_h = font_size + 10
     total_h = line_h * len(lines)
