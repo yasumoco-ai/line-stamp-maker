@@ -275,13 +275,10 @@ def create_stamp_zip(
         if progress_callback:
             progress_callback(i, len(stamp_configs), f"「{phrase}」を生成中…")
 
-        try:
-            # Step1: キャラクター＋ポーズをAIで生成（テキストなし）
-            char_img = generate_character_image(
-                client, character_desc, art_style, expression, ref_image
-            )
-        except Exception:
-            char_img = Image.new("RGBA", (STAMP_W, STAMP_H), (240, 240, 240, 255))
+        # Step1: キャラクター＋ポーズをAIで生成（テキストなし）
+        char_img = generate_character_image(
+            client, character_desc, art_style, expression, ref_image
+        )
 
         # Step2: Pillowでセリフを確実に描画
         stamp = add_styled_text(char_img, phrase, text_style)

@@ -159,7 +159,9 @@ else:
                 st.caption("ZIPをLINE Creators Marketへアップロードしてください。")
 
             except Exception as e:
-                st.error(f"エラー: {e}")
+                import traceback
+                st.error(f"エラーが発生しました:\n\n```\n{e}\n```")
+                st.code(traceback.format_exc(), language="text")
                 progress_bar.empty()
                 status_text.empty()
 
