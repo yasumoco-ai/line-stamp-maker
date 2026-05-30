@@ -2,6 +2,7 @@ import os
 import base64
 import zipfile
 import urllib.request
+import math
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from openai import OpenAI
@@ -24,117 +25,90 @@ REACTIONS = {
     "NG・手を振る": "waving hand, declining gesture",
 }
 
-# リアクション別テキストスタイル
+# effect: "wavy"=波打ち / "bounce"=バウンス / "standard"=通常
 REACTION_STYLES = {
     "笑顔・喜び": {
-        "color": (255, 160, 0),
-        "outline": (255, 255, 255),
-        "outline_w": 3,
-        "size": 34,
-        "weight": "regular",
-        "shadow": True,
+        "effect": "bounce",
+        "grad": [(255, 200, 0), (255, 120, 0)],
+        "outline": (255, 255, 255), "outline_w": 3,
+        "shadow": (180, 80, 0, 120), "size": 34, "weight": "bold",
     },
     "爆笑": {
-        "color": (255, 220, 0),
-        "outline": (255, 100, 0),
-        "outline_w": 4,
-        "size": 42,
-        "weight": "bold",
-        "shadow": True,
+        "effect": "bounce",
+        "grad": [(255, 230, 0), (255, 100, 0)],
+        "outline": (255, 50, 0), "outline_w": 5,
+        "shadow": (150, 60, 0, 160), "size": 44, "weight": "bold",
     },
     "驚き": {
-        "color": (0, 200, 255),
-        "outline": (0, 60, 180),
-        "outline_w": 4,
-        "size": 40,
-        "weight": "bold",
-        "shadow": True,
+        "effect": "wavy",
+        "grad": [(0, 230, 255), (0, 100, 220)],
+        "outline": (255, 255, 255), "outline_w": 4,
+        "shadow": (0, 50, 150, 150), "size": 40, "weight": "bold",
     },
     "感動・泣き": {
-        "color": (80, 140, 230),
-        "outline": (255, 255, 255),
-        "outline_w": 3,
-        "size": 30,
-        "weight": "regular",
-        "shadow": False,
+        "effect": "wavy",
+        "grad": [(120, 180, 255), (60, 100, 220)],
+        "outline": (255, 255, 255), "outline_w": 3,
+        "shadow": (40, 60, 180, 100), "size": 30, "weight": "regular",
     },
     "怒り": {
-        "color": (220, 20, 20),
-        "outline": (255, 220, 0),
-        "outline_w": 5,
-        "size": 46,
-        "weight": "bold",
-        "shadow": True,
+        "effect": "bounce",
+        "grad": [(255, 60, 0), (180, 0, 0)],
+        "outline": (255, 220, 0), "outline_w": 6,
+        "shadow": (100, 0, 0, 180), "size": 48, "weight": "bold",
     },
     "恥ずかしい": {
-        "color": (255, 100, 160),
-        "outline": (255, 255, 255),
-        "outline_w": 3,
-        "size": 28,
-        "weight": "regular",
-        "shadow": False,
+        "effect": "wavy",
+        "grad": [(255, 140, 180), (255, 80, 140)],
+        "outline": (255, 255, 255), "outline_w": 3,
+        "shadow": (180, 60, 100, 100), "size": 28, "weight": "regular",
     },
     "困り顔": {
-        "color": (130, 100, 190),
-        "outline": (255, 255, 255),
-        "outline_w": 3,
-        "size": 28,
-        "weight": "regular",
-        "shadow": False,
+        "effect": "standard",
+        "grad": [(160, 120, 220), (100, 80, 180)],
+        "outline": (255, 255, 255), "outline_w": 3,
+        "shadow": (60, 40, 120, 100), "size": 28, "weight": "regular",
     },
     "ドヤ顔": {
-        "color": (255, 200, 0),
-        "outline": (160, 60, 0),
-        "outline_w": 4,
-        "size": 38,
-        "weight": "bold",
-        "shadow": True,
+        "effect": "bounce",
+        "grad": [(255, 215, 0), (220, 150, 0)],
+        "outline": (140, 60, 0), "outline_w": 4,
+        "shadow": (100, 60, 0, 160), "size": 38, "weight": "bold",
     },
     "眠い": {
-        "color": (160, 180, 220),
-        "outline": (255, 255, 255),
-        "outline_w": 2,
-        "size": 26,
-        "weight": "regular",
-        "shadow": False,
+        "effect": "wavy",
+        "grad": [(180, 200, 230), (140, 160, 210)],
+        "outline": (255, 255, 255), "outline_w": 2,
+        "shadow": (80, 100, 160, 80), "size": 26, "weight": "regular",
     },
     "ラブ": {
-        "color": (255, 60, 130),
-        "outline": (255, 200, 220),
-        "outline_w": 3,
-        "size": 34,
-        "weight": "regular",
-        "shadow": False,
+        "effect": "bounce",
+        "grad": [(255, 100, 160), (255, 50, 120)],
+        "outline": (255, 220, 235), "outline_w": 3,
+        "shadow": (180, 30, 80, 120), "size": 34, "weight": "bold",
     },
     "OK・サムズアップ": {
-        "color": (30, 190, 80),
-        "outline": (255, 255, 255),
-        "outline_w": 4,
-        "size": 38,
-        "weight": "bold",
-        "shadow": True,
+        "effect": "bounce",
+        "grad": [(60, 210, 100), (0, 160, 60)],
+        "outline": (255, 255, 255), "outline_w": 4,
+        "shadow": (0, 80, 30, 140), "size": 38, "weight": "bold",
     },
     "NG・手を振る": {
-        "color": (200, 30, 30),
-        "outline": (255, 255, 255),
-        "outline_w": 4,
-        "size": 38,
-        "weight": "bold",
-        "shadow": True,
+        "effect": "bounce",
+        "grad": [(220, 40, 40), (160, 0, 0)],
+        "outline": (255, 255, 255), "outline_w": 4,
+        "shadow": (80, 0, 0, 140), "size": 38, "weight": "bold",
     },
 }
 
 DEFAULT_STYLE = {
-    "color": (30, 30, 30),
-    "outline": (255, 255, 255),
-    "outline_w": 3,
-    "size": 30,
-    "weight": "regular",
-    "shadow": False,
+    "effect": "standard",
+    "grad": [(60, 60, 60), (30, 30, 30)],
+    "outline": (255, 255, 255), "outline_w": 3,
+    "shadow": (0, 0, 0, 100), "size": 30, "weight": "regular",
 }
 
 FONT_DIR = Path(__file__).parent
-
 FONT_SOURCES = {
     "regular": {
         "system": [
@@ -161,91 +135,135 @@ _font_cache: dict = {}
 
 
 def get_font(weight: str, size: int) -> ImageFont.FreeTypeFont:
-    cache_key = (weight, size)
-    if cache_key in _font_cache:
-        return _font_cache[cache_key]
-
+    key = (weight, size)
+    if key in _font_cache:
+        return _font_cache[key]
     src = FONT_SOURCES.get(weight, FONT_SOURCES["regular"])
-
     for fp in src["system"]:
         if os.path.exists(fp):
             try:
                 f = ImageFont.truetype(fp, size)
-                _font_cache[cache_key] = f
+                _font_cache[key] = f
                 return f
             except Exception:
                 continue
-
     local = src["local"]
     if not local.exists():
         urllib.request.urlretrieve(src["url"], local)
-
     f = ImageFont.truetype(str(local), size)
-    _font_cache[cache_key] = f
+    _font_cache[key] = f
     return f
 
 
-def _draw_text_with_style(
+def _make_gradient(size: tuple, c1: tuple, c2: tuple) -> Image.Image:
+    """左→右のグラデーション画像を生成。"""
+    w, h = size
+    grad = Image.new("RGB", size)
+    for x in range(w):
+        t = x / max(w - 1, 1)
+        r = int(c1[0] + (c2[0] - c1[0]) * t)
+        g = int(c1[1] + (c2[1] - c1[1]) * t)
+        b = int(c1[2] + (c2[2] - c1[2]) * t)
+        for y in range(h):
+            grad.putpixel((x, y), (r, g, b))
+    return grad
+
+
+def _draw_chars(
     draw: ImageDraw.ImageDraw,
     text: str,
-    x: int,
-    y: int,
     font: ImageFont.FreeTypeFont,
-    style: dict,
+    x_start: int,
+    y_base: int,
+    effect: str,
+    fill,
 ) -> None:
-    ow = style["outline_w"]
-    outline_color = style["outline"] + (255,)
-    text_color = style["color"] + (255,)
-
-    # ドロップシャドウ
-    if style.get("shadow"):
-        shadow_color = (0, 0, 0, 100)
-        draw.text((x + 3, y + 3), text, font=font, fill=shadow_color)
-
-    # 縁取り（外側から内側へ）
-    for dx in range(-ow, ow + 1):
-        for dy in range(-ow, ow + 1):
-            if abs(dx) + abs(dy) >= ow:
-                draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-
-    # 本文
-    draw.text((x, y), text, font=font, fill=text_color)
+    """1文字ずつ描画。effectに応じてY位置を変化させる。"""
+    x = x_start
+    ref_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    for i, ch in enumerate(text):
+        if effect == "wavy":
+            dy = int(math.sin(i * 1.3) * 7)
+        elif effect == "bounce":
+            dy = int(abs(math.sin(i * 1.0)) * -6)
+        else:
+            dy = 0
+        draw.text((x, y_base + dy), ch, font=font, fill=fill)
+        bbox = ref_draw.textbbox((0, 0), ch, font=font)
+        x += bbox[2] - bbox[0]
 
 
-def add_text_to_stamp(img: Image.Image, text: str, reaction: str) -> Image.Image:
-    stamp = img.resize((STAMP_W, STAMP_H), Image.LANCZOS).convert("RGBA")
-    draw = ImageDraw.Draw(stamp)
+def _text_total_width(text: str, font: ImageFont.FreeTypeFont) -> int:
+    ref_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    total = 0
+    for ch in text:
+        bbox = ref_draw.textbbox((0, 0), ch, font=font)
+        total += bbox[2] - bbox[0]
+    return total
 
-    style = REACTION_STYLES.get(reaction, DEFAULT_STYLE)
-    font = get_font(style["weight"], style["size"])
 
-    margin = 10
-    max_width = STAMP_W - margin * 2
-
-    # 折り返し
-    lines = []
-    current = ""
+def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
+    lines, current = [], ""
+    ref_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     for ch in text:
         test = current + ch
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if bbox[2] - bbox[0] > max_width and current:
+        bbox = ref_draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] > max_w and current:
             lines.append(current)
             current = ch
         else:
             current = test
     if current:
         lines.append(current)
+    return lines
 
-    line_h = style["size"] + 8
+
+def add_text_to_stamp(img: Image.Image, text: str, reaction: str) -> Image.Image:
+    stamp = img.resize((STAMP_W, STAMP_H), Image.LANCZOS).convert("RGBA")
+    style = REACTION_STYLES.get(reaction, DEFAULT_STYLE)
+
+    font = get_font(style["weight"], style["size"])
+    effect = style["effect"]
+    margin = 12
+    lines = _wrap_text(text, font, STAMP_W - margin * 2)
+    line_h = style["size"] + 10
     total_h = line_h * len(lines)
-    text_y = STAMP_H - total_h - margin - style["outline_w"]
+    y_base = STAMP_H - total_h - margin - style["outline_w"]
 
-    for i, line in enumerate(lines):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        text_w = bbox[2] - bbox[0]
-        x = (STAMP_W - text_w) // 2
-        y = text_y + i * line_h
-        _draw_text_with_style(draw, line, x, y, font, style)
+    for li, line in enumerate(lines):
+        tw = _text_total_width(line, font)
+        x0 = (STAMP_W - tw) // 2
+        y0 = y_base + li * line_h
+
+        # --- 1. ドロップシャドウ（ぼかし） ---
+        if style.get("shadow"):
+            shadow_layer = Image.new("RGBA", stamp.size, (0, 0, 0, 0))
+            sd = ImageDraw.Draw(shadow_layer)
+            _draw_chars(sd, line, font, x0 + 4, y0 + 4, effect, style["shadow"])
+            shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=4))
+            stamp = Image.alpha_composite(stamp, shadow_layer)
+
+        # --- 2. 縁取り ---
+        ow = style["outline_w"]
+        outline_layer = Image.new("RGBA", stamp.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(outline_layer)
+        oc = style["outline"] + (255,)
+        for dx in range(-ow, ow + 1):
+            for dy in range(-ow, ow + 1):
+                if abs(dx) + abs(dy) >= ow:
+                    _draw_chars(od, line, font, x0 + dx, y0 + dy, effect, oc)
+        stamp = Image.alpha_composite(stamp, outline_layer)
+
+        # --- 3. グラデーション本文 ---
+        text_mask = Image.new("L", stamp.size, 0)
+        td = ImageDraw.Draw(text_mask)
+        _draw_chars(td, line, font, x0, y0, effect, 255)
+
+        grad_img = _make_gradient(stamp.size, style["grad"][0], style["grad"][1])
+        grad_rgba = grad_img.convert("RGBA")
+        grad_layer = Image.new("RGBA", stamp.size, (0, 0, 0, 0))
+        grad_layer.paste(grad_rgba, mask=text_mask)
+        stamp = Image.alpha_composite(stamp, grad_layer)
 
     return stamp
 
@@ -256,14 +274,12 @@ def generate_expression_image(
     buf = io.BytesIO()
     ref_image.convert("RGB").save(buf, format="PNG")
     buf.seek(0)
-
     prompt = (
         f"This is my original character. "
         f"Generate a LINE sticker version of this exact character showing a {reaction_desc}. "
         f"Preserve the character's appearance, colors, art style, and design exactly. "
         f"White background. Cute expressive sticker style. No text, no borders."
     )
-
     response = client.images.edit(
         model="gpt-image-1",
         image=("character.png", buf, "image/png"),
@@ -271,10 +287,8 @@ def generate_expression_image(
         size="1024x1024",
         n=1,
     )
-
     img_b64 = response.data[0].b64_json
-    img_bytes = base64.b64decode(img_b64)
-    return Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+    return Image.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
 
 
 def create_stamp_zip(
@@ -286,7 +300,6 @@ def create_stamp_zip(
 ) -> str:
     out = Path(output_path)
     out.mkdir(parents=True, exist_ok=True)
-
     generated_paths = []
 
     for i, config in enumerate(stamp_configs):
@@ -303,7 +316,6 @@ def create_stamp_zip(
             expr_img = ref_image.copy().convert("RGBA")
 
         stamp = add_text_to_stamp(expr_img, phrase, reaction)
-
         filename = out / f"stamp_{i+1:02d}.png"
         stamp.save(filename, "PNG")
         generated_paths.append(filename)
