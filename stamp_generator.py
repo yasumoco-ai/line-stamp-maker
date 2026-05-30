@@ -3,7 +3,7 @@ import base64
 import zipfile
 import urllib.request
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from openai import OpenAI
 import io
 
@@ -24,38 +24,235 @@ REACTIONS = {
     "NG・手を振る": "waving hand, declining gesture",
 }
 
-FONT_URL = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf"
-FONT_LOCAL = Path(__file__).parent / "NotoSansCJKjp-Regular.otf"
+# リアクション別テキストスタイル
+REACTION_STYLES = {
+    "笑顔・喜び": {
+        "color": (255, 160, 0),
+        "outline": (255, 255, 255),
+        "outline_w": 3,
+        "size": 34,
+        "weight": "regular",
+        "shadow": True,
+    },
+    "爆笑": {
+        "color": (255, 220, 0),
+        "outline": (255, 100, 0),
+        "outline_w": 4,
+        "size": 42,
+        "weight": "bold",
+        "shadow": True,
+    },
+    "驚き": {
+        "color": (0, 200, 255),
+        "outline": (0, 60, 180),
+        "outline_w": 4,
+        "size": 40,
+        "weight": "bold",
+        "shadow": True,
+    },
+    "感動・泣き": {
+        "color": (80, 140, 230),
+        "outline": (255, 255, 255),
+        "outline_w": 3,
+        "size": 30,
+        "weight": "regular",
+        "shadow": False,
+    },
+    "怒り": {
+        "color": (220, 20, 20),
+        "outline": (255, 220, 0),
+        "outline_w": 5,
+        "size": 46,
+        "weight": "bold",
+        "shadow": True,
+    },
+    "恥ずかしい": {
+        "color": (255, 100, 160),
+        "outline": (255, 255, 255),
+        "outline_w": 3,
+        "size": 28,
+        "weight": "regular",
+        "shadow": False,
+    },
+    "困り顔": {
+        "color": (130, 100, 190),
+        "outline": (255, 255, 255),
+        "outline_w": 3,
+        "size": 28,
+        "weight": "regular",
+        "shadow": False,
+    },
+    "ドヤ顔": {
+        "color": (255, 200, 0),
+        "outline": (160, 60, 0),
+        "outline_w": 4,
+        "size": 38,
+        "weight": "bold",
+        "shadow": True,
+    },
+    "眠い": {
+        "color": (160, 180, 220),
+        "outline": (255, 255, 255),
+        "outline_w": 2,
+        "size": 26,
+        "weight": "regular",
+        "shadow": False,
+    },
+    "ラブ": {
+        "color": (255, 60, 130),
+        "outline": (255, 200, 220),
+        "outline_w": 3,
+        "size": 34,
+        "weight": "regular",
+        "shadow": False,
+    },
+    "OK・サムズアップ": {
+        "color": (30, 190, 80),
+        "outline": (255, 255, 255),
+        "outline_w": 4,
+        "size": 38,
+        "weight": "bold",
+        "shadow": True,
+    },
+    "NG・手を振る": {
+        "color": (200, 30, 30),
+        "outline": (255, 255, 255),
+        "outline_w": 4,
+        "size": 38,
+        "weight": "bold",
+        "shadow": True,
+    },
+}
+
+DEFAULT_STYLE = {
+    "color": (30, 30, 30),
+    "outline": (255, 255, 255),
+    "outline_w": 3,
+    "size": 30,
+    "weight": "regular",
+    "shadow": False,
+}
+
+FONT_DIR = Path(__file__).parent
+
+FONT_SOURCES = {
+    "regular": {
+        "system": [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/System/Library/Fonts/ヒラギノ丸ゴ ProN W4.ttc",
+            "/System/Library/Fonts/Hiragino Maru Gothic ProN.ttc",
+        ],
+        "local": FONT_DIR / "NotoSansCJKjp-Regular.otf",
+        "url": "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf",
+    },
+    "bold": {
+        "system": [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+            "/System/Library/Fonts/ヒラギノ角ゴシック W8.ttc",
+        ],
+        "local": FONT_DIR / "NotoSansCJKjp-Bold.otf",
+        "url": "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Bold.otf",
+    },
+}
+
+_font_cache: dict = {}
 
 
-def get_font(size: int) -> ImageFont.FreeTypeFont:
-    candidates = [
-        # Streamlit Cloud (Linux) - apt packages.txt でインストール
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        str(FONT_LOCAL),
-        # Mac
-        "/System/Library/Fonts/ヒラギノ丸ゴ ProN W4.ttc",
-        "/System/Library/Fonts/Hiragino Maru Gothic ProN.ttc",
-        "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
-    ]
-    for fp in candidates:
+def get_font(weight: str, size: int) -> ImageFont.FreeTypeFont:
+    cache_key = (weight, size)
+    if cache_key in _font_cache:
+        return _font_cache[cache_key]
+
+    src = FONT_SOURCES.get(weight, FONT_SOURCES["regular"])
+
+    for fp in src["system"]:
         if os.path.exists(fp):
             try:
-                return ImageFont.truetype(fp, size)
+                f = ImageFont.truetype(fp, size)
+                _font_cache[cache_key] = f
+                return f
             except Exception:
                 continue
 
-    # フォントが見つからない場合はダウンロード
-    if not FONT_LOCAL.exists():
-        urllib.request.urlretrieve(FONT_URL, FONT_LOCAL)
-    return ImageFont.truetype(str(FONT_LOCAL), size)
+    local = src["local"]
+    if not local.exists():
+        urllib.request.urlretrieve(src["url"], local)
+
+    f = ImageFont.truetype(str(local), size)
+    _font_cache[cache_key] = f
+    return f
+
+
+def _draw_text_with_style(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    x: int,
+    y: int,
+    font: ImageFont.FreeTypeFont,
+    style: dict,
+) -> None:
+    ow = style["outline_w"]
+    outline_color = style["outline"] + (255,)
+    text_color = style["color"] + (255,)
+
+    # ドロップシャドウ
+    if style.get("shadow"):
+        shadow_color = (0, 0, 0, 100)
+        draw.text((x + 3, y + 3), text, font=font, fill=shadow_color)
+
+    # 縁取り（外側から内側へ）
+    for dx in range(-ow, ow + 1):
+        for dy in range(-ow, ow + 1):
+            if abs(dx) + abs(dy) >= ow:
+                draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
+
+    # 本文
+    draw.text((x, y), text, font=font, fill=text_color)
+
+
+def add_text_to_stamp(img: Image.Image, text: str, reaction: str) -> Image.Image:
+    stamp = img.resize((STAMP_W, STAMP_H), Image.LANCZOS).convert("RGBA")
+    draw = ImageDraw.Draw(stamp)
+
+    style = REACTION_STYLES.get(reaction, DEFAULT_STYLE)
+    font = get_font(style["weight"], style["size"])
+
+    margin = 10
+    max_width = STAMP_W - margin * 2
+
+    # 折り返し
+    lines = []
+    current = ""
+    for ch in text:
+        test = current + ch
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] > max_width and current:
+            lines.append(current)
+            current = ch
+        else:
+            current = test
+    if current:
+        lines.append(current)
+
+    line_h = style["size"] + 8
+    total_h = line_h * len(lines)
+    text_y = STAMP_H - total_h - margin - style["outline_w"]
+
+    for i, line in enumerate(lines):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        text_w = bbox[2] - bbox[0]
+        x = (STAMP_W - text_w) // 2
+        y = text_y + i * line_h
+        _draw_text_with_style(draw, line, x, y, font, style)
+
+    return stamp
 
 
 def generate_expression_image(
     client: OpenAI, ref_image: Image.Image, reaction_label: str, reaction_desc: str
 ) -> Image.Image:
-    """images.edit でキャラクターの見た目を保ちながら表情を変える。"""
     buf = io.BytesIO()
     ref_image.convert("RGB").save(buf, format="PNG")
     buf.seek(0)
@@ -78,50 +275,6 @@ def generate_expression_image(
     img_b64 = response.data[0].b64_json
     img_bytes = base64.b64decode(img_b64)
     return Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-
-
-def add_text_to_stamp(img: Image.Image, text: str) -> Image.Image:
-    """セリフテキストをスタンプ画像に重ねる。"""
-    stamp = img.resize((STAMP_W, STAMP_H), Image.LANCZOS).convert("RGBA")
-    draw = ImageDraw.Draw(stamp)
-
-    font_size = 30
-    font = get_font(font_size)
-
-    margin = 12
-    max_width = STAMP_W - margin * 2
-
-    # 折り返し処理
-    lines = []
-    current = ""
-    for ch in text:
-        test = current + ch
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if bbox[2] - bbox[0] > max_width and current:
-            lines.append(current)
-            current = ch
-        else:
-            current = test
-    if current:
-        lines.append(current)
-
-    line_h = font_size + 6
-    total_h = line_h * len(lines) + 8
-    text_y = STAMP_H - total_h - margin
-
-    for i, line in enumerate(lines):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        text_w = bbox[2] - bbox[0]
-        x = (STAMP_W - text_w) // 2
-        y = text_y + i * line_h
-        # 白縁取り
-        for dx in [-2, -1, 0, 1, 2]:
-            for dy in [-2, -1, 0, 1, 2]:
-                if dx != 0 or dy != 0:
-                    draw.text((x + dx, y + dy), line, font=font, fill=(255, 255, 255, 230))
-        draw.text((x, y), line, font=font, fill=(20, 20, 20, 255))
-
-    return stamp
 
 
 def create_stamp_zip(
@@ -149,13 +302,12 @@ def create_stamp_zip(
         except Exception:
             expr_img = ref_image.copy().convert("RGBA")
 
-        stamp = add_text_to_stamp(expr_img, phrase)
+        stamp = add_text_to_stamp(expr_img, phrase, reaction)
 
         filename = out / f"stamp_{i+1:02d}.png"
         stamp.save(filename, "PNG")
         generated_paths.append(filename)
 
-    # タブ画像
     tab_img = ref_image.resize((96, 74), Image.LANCZOS)
     tab_path = out / "tab.png"
     tab_img.save(tab_path, "PNG")
