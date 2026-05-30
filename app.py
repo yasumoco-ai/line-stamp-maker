@@ -28,6 +28,47 @@ if not api_key:
 
 client = OpenAI(api_key=api_key)
 
+
+# ======================================================
+# 共通生成関数（タブより前に定義）
+# ======================================================
+def _run_batch_generation(client, stamp_configs, output_dir, progress_callback):
+    from stamp_generator import generate_character_image, add_styled_text
+    import zipfile
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    generated_paths = []
+
+    for i, config in enumerate(stamp_configs):
+        if progress_callback:
+            progress_callback(i, len(stamp_configs), f"「{config['phrase']}」を生成中…")
+
+        char_img = generate_character_image(
+            client,
+            config.get("character_desc", ""),
+            config.get("art_style", ""),
+            config.get("expression", ""),
+            ref_image=None,
+        )
+        stamp = add_styled_text(char_img, config["phrase"], config.get("text_style", ""))
+
+        filename = out / f"stamp_{i+1:02d}.png"
+        stamp.save(filename, "PNG")
+        generated_paths.append(filename)
+
+    tab_src = Image.open(generated_paths[0]).resize((96, 74)) if generated_paths \
+        else Image.new("RGBA", (96, 74), (200, 200, 200, 255))
+    tab_path = out / "tab.png"
+    tab_src.save(tab_path, "PNG")
+
+    zip_path = str(out) + ".zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for p in generated_paths:
+            zf.write(p, p.name)
+        zf.write(tab_path, "tab.png")
+    return zip_path
+
+
 tab_batch, tab_manual = st.tabs(["📋 バッチ入力（プロンプトを貼り付け）", "✏️ 手動入力"])
 
 
@@ -218,43 +259,3 @@ with tab_manual:
 
 st.divider()
 st.caption("LINE Creators Market → https://creator.line.me/")
-
-
-# ======================================================
-# 共通生成関数（各スタンプが独自の character_desc / art_style を持つ場合に対応）
-# ======================================================
-def _run_batch_generation(client, stamp_configs, output_dir, progress_callback):
-    from stamp_generator import generate_character_image, add_styled_text
-    import zipfile
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    generated_paths = []
-
-    for i, config in enumerate(stamp_configs):
-        if progress_callback:
-            progress_callback(i, len(stamp_configs), f"「{config['phrase']}」を生成中…")
-
-        char_img = generate_character_image(
-            client,
-            config.get("character_desc", ""),
-            config.get("art_style", ""),
-            config.get("expression", ""),
-            ref_image=None,
-        )
-        stamp = add_styled_text(char_img, config["phrase"], config.get("text_style", ""))
-
-        filename = out / f"stamp_{i+1:02d}.png"
-        stamp.save(filename, "PNG")
-        generated_paths.append(filename)
-
-    tab_src = Image.open(generated_paths[0]).resize((96, 74)) if generated_paths \
-        else Image.new("RGBA", (96, 74), (200, 200, 200, 255))
-    tab_path = out / "tab.png"
-    tab_src.save(tab_path, "PNG")
-
-    zip_path = str(out) + ".zip"
-    with zipfile.ZipFile(zip_path, "w") as zf:
-        for p in generated_paths:
-            zf.write(p, p.name)
-        zf.write(tab_path, "tab.png")
-    return zip_path
