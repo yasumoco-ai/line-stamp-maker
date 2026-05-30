@@ -1,7 +1,6 @@
 import os
 import base64
 import zipfile
-import urllib.request
 import math
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -110,26 +109,26 @@ DEFAULT_STYLE = {
 }
 
 FONT_DIR = Path(__file__).parent
-FONT_SOURCES = {
-    "regular": {
-        "system": [
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            "/System/Library/Fonts/ヒラギノ丸ゴ ProN W4.ttc",
-            "/System/Library/Fonts/Hiragino Maru Gothic ProN.ttc",
-        ],
-        "local": FONT_DIR / "NotoSansCJKjp-Regular.otf",
-        "url": "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf",
-    },
-    "bold": {
-        "system": [
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-            "/System/Library/Fonts/ヒラギノ角ゴシック W8.ttc",
-        ],
-        "local": FONT_DIR / "NotoSansCJKjp-Bold.otf",
-        "url": "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/Japanese/NotoSansCJKjp-Bold.otf",
-    },
+
+# リポジトリ同梱フォント（最優先）
+_BUNDLED = {
+    "regular": FONT_DIR / "NotoSansJP-Regular.otf",
+    "bold":    FONT_DIR / "NotoSansJP-Bold.otf",
+}
+
+# システムフォント（フォールバック）
+_SYSTEM = {
+    "regular": [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/System/Library/Fonts/ヒラギノ丸ゴ ProN W4.ttc",
+        "/System/Library/Fonts/Hiragino Maru Gothic ProN.ttc",
+    ],
+    "bold": [
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W8.ttc",
+    ],
 }
 
 _font_cache: dict = {}
@@ -139,8 +138,16 @@ def get_font(weight: str, size: int) -> ImageFont.FreeTypeFont:
     key = (weight, size)
     if key in _font_cache:
         return _font_cache[key]
-    src = FONT_SOURCES.get(weight, FONT_SOURCES["regular"])
-    for fp in src["system"]:
+
+    # 1. 同梱フォントを最優先
+    bundled = _BUNDLED.get(weight, _BUNDLED["regular"])
+    if bundled.exists():
+        f = ImageFont.truetype(str(bundled), size)
+        _font_cache[key] = f
+        return f
+
+    # 2. システムフォント
+    for fp in _SYSTEM.get(weight, _SYSTEM["regular"]):
         if os.path.exists(fp):
             try:
                 f = ImageFont.truetype(fp, size)
@@ -148,12 +155,15 @@ def get_font(weight: str, size: int) -> ImageFont.FreeTypeFont:
                 return f
             except Exception:
                 continue
-    local = src["local"]
-    if not local.exists():
-        urllib.request.urlretrieve(src["url"], local)
-    f = ImageFont.truetype(str(local), size)
-    _font_cache[key] = f
-    return f
+
+    # 3. regular の同梱フォントで代替
+    fallback = _BUNDLED["regular"]
+    if fallback.exists():
+        f = ImageFont.truetype(str(fallback), size)
+        _font_cache[key] = f
+        return f
+
+    raise RuntimeError("日本語フォントが見つかりません")
 
 
 def _make_gradient(size: tuple, c1: tuple, c2: tuple) -> Image.Image:
