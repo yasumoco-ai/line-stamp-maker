@@ -25,87 +25,88 @@ REACTIONS = {
     "NG・手を振る": "waving hand, declining gesture",
 }
 
+# size = 1行に収まらない時の折り返し後の最大サイズ上限。auto_font_size()で実際のサイズを決定。
 # effect: "wavy"=波打ち / "bounce"=バウンス / "standard"=通常
 REACTION_STYLES = {
     "笑顔・喜び": {
         "effect": "bounce",
         "grad": [(255, 200, 0), (255, 120, 0)],
-        "outline": (255, 255, 255), "outline_w": 3,
-        "shadow": (180, 80, 0, 120), "size": 34, "weight": "bold",
+        "outline": (255, 255, 255), "outline_w": 4,
+        "shadow": (180, 80, 0, 120), "size": 72, "weight": "bold",
     },
     "爆笑": {
         "effect": "bounce",
         "grad": [(255, 230, 0), (255, 100, 0)],
-        "outline": (255, 50, 0), "outline_w": 5,
-        "shadow": (150, 60, 0, 160), "size": 44, "weight": "bold",
+        "outline": (255, 50, 0), "outline_w": 6,
+        "shadow": (150, 60, 0, 160), "size": 76, "weight": "bold",
     },
     "驚き": {
         "effect": "wavy",
         "grad": [(0, 230, 255), (0, 100, 220)],
-        "outline": (255, 255, 255), "outline_w": 4,
-        "shadow": (0, 50, 150, 150), "size": 40, "weight": "bold",
+        "outline": (255, 255, 255), "outline_w": 5,
+        "shadow": (0, 50, 150, 150), "size": 74, "weight": "bold",
     },
     "感動・泣き": {
         "effect": "wavy",
         "grad": [(120, 180, 255), (60, 100, 220)],
-        "outline": (255, 255, 255), "outline_w": 3,
-        "shadow": (40, 60, 180, 100), "size": 30, "weight": "regular",
+        "outline": (255, 255, 255), "outline_w": 4,
+        "shadow": (40, 60, 180, 100), "size": 68, "weight": "regular",
     },
     "怒り": {
         "effect": "bounce",
         "grad": [(255, 60, 0), (180, 0, 0)],
-        "outline": (255, 220, 0), "outline_w": 6,
-        "shadow": (100, 0, 0, 180), "size": 48, "weight": "bold",
+        "outline": (255, 220, 0), "outline_w": 7,
+        "shadow": (100, 0, 0, 180), "size": 80, "weight": "bold",
     },
     "恥ずかしい": {
         "effect": "wavy",
         "grad": [(255, 140, 180), (255, 80, 140)],
-        "outline": (255, 255, 255), "outline_w": 3,
-        "shadow": (180, 60, 100, 100), "size": 28, "weight": "regular",
+        "outline": (255, 255, 255), "outline_w": 4,
+        "shadow": (180, 60, 100, 100), "size": 68, "weight": "regular",
     },
     "困り顔": {
         "effect": "standard",
         "grad": [(160, 120, 220), (100, 80, 180)],
-        "outline": (255, 255, 255), "outline_w": 3,
-        "shadow": (60, 40, 120, 100), "size": 28, "weight": "regular",
+        "outline": (255, 255, 255), "outline_w": 4,
+        "shadow": (60, 40, 120, 100), "size": 68, "weight": "regular",
     },
     "ドヤ顔": {
         "effect": "bounce",
         "grad": [(255, 215, 0), (220, 150, 0)],
-        "outline": (140, 60, 0), "outline_w": 4,
-        "shadow": (100, 60, 0, 160), "size": 38, "weight": "bold",
+        "outline": (140, 60, 0), "outline_w": 5,
+        "shadow": (100, 60, 0, 160), "size": 74, "weight": "bold",
     },
     "眠い": {
         "effect": "wavy",
         "grad": [(180, 200, 230), (140, 160, 210)],
-        "outline": (255, 255, 255), "outline_w": 2,
-        "shadow": (80, 100, 160, 80), "size": 26, "weight": "regular",
+        "outline": (255, 255, 255), "outline_w": 3,
+        "shadow": (80, 100, 160, 80), "size": 66, "weight": "regular",
     },
     "ラブ": {
         "effect": "bounce",
         "grad": [(255, 100, 160), (255, 50, 120)],
-        "outline": (255, 220, 235), "outline_w": 3,
-        "shadow": (180, 30, 80, 120), "size": 34, "weight": "bold",
+        "outline": (255, 220, 235), "outline_w": 4,
+        "shadow": (180, 30, 80, 120), "size": 72, "weight": "bold",
     },
     "OK・サムズアップ": {
         "effect": "bounce",
         "grad": [(60, 210, 100), (0, 160, 60)],
-        "outline": (255, 255, 255), "outline_w": 4,
-        "shadow": (0, 80, 30, 140), "size": 38, "weight": "bold",
+        "outline": (255, 255, 255), "outline_w": 5,
+        "shadow": (0, 80, 30, 140), "size": 74, "weight": "bold",
     },
     "NG・手を振る": {
         "effect": "bounce",
         "grad": [(220, 40, 40), (160, 0, 0)],
-        "outline": (255, 255, 255), "outline_w": 4,
-        "shadow": (80, 0, 0, 140), "size": 38, "weight": "bold",
+        "outline": (255, 255, 255), "outline_w": 5,
+        "shadow": (80, 0, 0, 140), "size": 74, "weight": "bold",
     },
 }
 
 DEFAULT_STYLE = {
     "effect": "standard",
     "grad": [(60, 60, 60), (30, 30, 30)],
-    "outline": (255, 255, 255), "outline_w": 3,
-    "shadow": (0, 0, 0, 100), "size": 30, "weight": "regular",
+    "outline": (255, 255, 255), "outline_w": 4,
+    "shadow": (0, 0, 0, 100), "size": 70, "weight": "regular",
 }
 
 FONT_DIR = Path(__file__).parent
@@ -218,17 +219,35 @@ def _wrap_text(text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]
     return lines
 
 
+def _auto_font_size(
+    text: str, weight: str, max_size: int, max_w: int, max_lines: int = 2
+) -> tuple[int, list[str]]:
+    """テキストが max_w に収まる最大フォントサイズと折り返し行を返す。"""
+    for size in range(max_size, 28, -2):
+        font = get_font(weight, size)
+        lines = _wrap_text(text, font, max_w)
+        if len(lines) <= max_lines:
+            return size, lines
+    font = get_font(weight, 30)
+    return 30, _wrap_text(text, font, max_w)
+
+
 def add_text_to_stamp(img: Image.Image, text: str, reaction: str) -> Image.Image:
     stamp = img.resize((STAMP_W, STAMP_H), Image.LANCZOS).convert("RGBA")
     style = REACTION_STYLES.get(reaction, DEFAULT_STYLE)
 
-    font = get_font(style["weight"], style["size"])
+    margin = 14
+    ow = style["outline_w"]
+    max_w = STAMP_W - margin * 2 - ow * 2
+
+    # テキストが収まる最大サイズを自動決定
+    font_size, lines = _auto_font_size(text, style["weight"], style["size"], max_w)
+    font = get_font(style["weight"], font_size)
+
     effect = style["effect"]
-    margin = 12
-    lines = _wrap_text(text, font, STAMP_W - margin * 2)
-    line_h = style["size"] + 10
+    line_h = font_size + 10
     total_h = line_h * len(lines)
-    y_base = STAMP_H - total_h - margin - style["outline_w"]
+    y_base = STAMP_H - total_h - margin - ow
 
     for li, line in enumerate(lines):
         tw = _text_total_width(line, font)
