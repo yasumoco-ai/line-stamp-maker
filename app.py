@@ -35,7 +35,7 @@ client = OpenAI(api_key=api_key)
 def _build_full_prompt(config: dict) -> str:
     """プロンプトブロックの全要素をそのままAIに渡す文字列を構築。"""
     parts = [
-        "LINEスタンプ風イラスト。1024×1024ピクセル、白背景。"
+        "LINEスタンプ風イラスト。1024×1024ピクセル、背景は透明。"
         "キャラクターは中央に大きく配置。",
     ]
     if config.get("character_desc"):
@@ -79,6 +79,7 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
                     image=("reference.png", buf, "image/png"),
                     prompt=prompt,
                     size="1024x1024",
+                    background="transparent",
                     n=1,
                 )
             else:
@@ -87,6 +88,7 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
                     model="gpt-image-1",
                     prompt=prompt,
                     size="1024x1024",
+                    background="transparent",
                     n=1,
                 )
             from stamp_generator import STAMP_W, STAMP_H

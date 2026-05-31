@@ -243,7 +243,7 @@ def build_image_prompt(
 ) -> str:
     """テキストなし・キャラクター＋ポーズのみのプロンプトを構築。"""
     parts = [
-        "LINEスタンプ風イラスト。1024×1024ピクセル、白背景。"
+        "LINEスタンプ風イラスト。1024×1024ピクセル、背景は透明。"
         "キャラクターは中央に大きく配置。テキストや文字は描かないこと。"
         "表情とポーズは大げさにオーバーアクションで。"
     ]
@@ -270,6 +270,7 @@ def generate_character_image(
         model="gpt-image-1",
         prompt=prompt,
         size="1024x1024",
+        background="transparent",
         n=1,
     )
 
