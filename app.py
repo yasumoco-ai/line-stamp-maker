@@ -105,7 +105,7 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
             )
             stamp = add_styled_text(char_img, config["phrase"], config.get("text_style", ""))
 
-        filename = out / f"stamp_{i+1:02d}.png"
+        filename = out / f"{i+1:02d}.png"
         stamp.save(filename, "PNG")
         generated_paths.append(filename)
 
@@ -114,11 +114,18 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
     tab_path = out / "tab.png"
     tab_src.save(tab_path, "PNG")
 
+    # main.png（240×240、01.pngを縮小）
+    main_src = Image.open(generated_paths[0]).resize((240, 240), PILImage.LANCZOS) if generated_paths \
+        else PILImage.new("RGBA", (240, 240), (200, 200, 200, 255))
+    main_path = out / "main.png"
+    main_src.save(main_path, "PNG")
+
     zip_path = str(out) + ".zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         for p in generated_paths:
             zf.write(p, p.name)
         zf.write(tab_path, "tab.png")
+        zf.write(main_path, "main.png")
     return zip_path
 
 
@@ -234,7 +241,7 @@ No.2「海行きたい！」
                 progress_bar.progress(1.0)
                 status_text.text("✅ 生成完了！")
 
-                stamp_files = sorted(Path(output_dir).glob("stamp_*.png"))
+                stamp_files = sorted(Path(output_dir).glob("[0-9]*.png"))
                 for idx, sf in enumerate(stamp_files):
                     with preview_cols[idx % 4]:
                         st.image(str(sf), use_container_width=True)
@@ -322,7 +329,7 @@ with tab_manual:
                 zip_path = _run_batch_generation(client, valid_manual, output_dir, manual_progress)
                 progress_bar2.progress(1.0)
                 status_text2.text("✅ 生成完了！")
-                stamp_files = sorted(Path(output_dir).glob("stamp_*.png"))
+                stamp_files = sorted(Path(output_dir).glob("[0-9]*.png"))
                 for idx, sf in enumerate(stamp_files):
                     with preview_cols2[idx % 4]:
                         st.image(str(sf), use_container_width=True)

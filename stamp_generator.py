@@ -330,7 +330,7 @@ def create_stamp_zip(
         # Step2: Pillowでセリフを確実に描画
         stamp = add_styled_text(char_img, phrase, text_style)
 
-        filename = out / f"stamp_{i+1:02d}.png"
+        filename = out / f"{i+1:02d}.png"
         stamp.save(filename, "PNG")
         generated_paths.append(filename)
 
@@ -339,10 +339,16 @@ def create_stamp_zip(
     tab_path = out / "tab.png"
     tab_src.save(tab_path, "PNG")
 
+    # main.png（240×240、01.pngを縮小）
+    main_src = Image.open(generated_paths[0]).resize((240, 240), Image.LANCZOS) if generated_paths else Image.new("RGBA", (240, 240), (200, 200, 200, 255))
+    main_path = out / "main.png"
+    main_src.save(main_path, "PNG")
+
     zip_path = str(out) + ".zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         for p in generated_paths:
             zf.write(p, p.name)
         zf.write(tab_path, "tab.png")
+        zf.write(main_path, "main.png")
 
     return zip_path
