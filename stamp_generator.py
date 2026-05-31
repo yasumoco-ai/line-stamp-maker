@@ -83,6 +83,15 @@ _FONT_KEYWORDS: list[tuple[list[str], str]] = [
     (["ゴシック", "gothic", "sans"],                                                              "sans"),
 ]
 
+# フチ色キーワード（"フチ"付きで色キーワードとの衝突を回避）
+_OUTLINE_KEYWORDS: list[tuple[list[str], tuple]] = [
+    (["黄フチ", "黄色フチ", "きいろフチ", "イエローフチ", "金フチ"], (255, 230, 0)),
+    (["赤フチ", "赤いフチ", "レッドフチ", "オレンジフチ"],           (255, 60, 60)),
+    (["黒フチ", "ブラックフチ"],                                     (0, 0, 0)),
+    (["ピンクフチ"],                                                  (255, 100, 160)),
+    (["白フチ", "ホワイトフチ"],                                      (255, 255, 255)),
+]
+
 
 def _detect_font_key(text_style: str) -> str:
     for keywords, font_key in _FONT_KEYWORDS:
@@ -102,8 +111,21 @@ def _parse_text_style(text_style: str) -> dict:
     font_key = _detect_font_key(text_style)
     is_bold = "bold" in font_key
 
-    outline_color = (255, 255, 255)
-    outline_w = 5
+    # フチ色：明示指定があればそれを使い、なければ文字色の明暗で自動決定
+    outline_color = None
+    for keywords, color in _OUTLINE_KEYWORDS:
+        if any(kw in text_style for kw in keywords):
+            outline_color = color
+            break
+
+    if outline_color is None:
+        # 文字色が暗い（デフォルト黒系 or 明示的に"黒"）場合は白フチ
+        is_dark_text = (grad == _DEFAULT_GRAD or any(kw in text_style for kw in ["黒", "ブラック", "くろ"]))
+        outline_color = (255, 255, 255) if is_dark_text else (0, 0, 0)
+
+    # 暗い文字はフチを太めにして視認性を上げる
+    is_dark_text_final = (grad == _DEFAULT_GRAD or any(kw in text_style for kw in ["黒", "ブラック", "くろ"]))
+    outline_w = 7 if is_dark_text_final else 5
 
     effect = "bounce" if is_bold else "standard"
     if any(kw in text_style for kw in ["波", "ウェーブ", "wavy", "ゆらゆら"]):
