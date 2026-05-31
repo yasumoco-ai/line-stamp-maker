@@ -54,9 +54,11 @@ def _build_full_prompt(config: dict) -> str:
     return "\n\n".join(parts)
 
 
-def _run_batch_generation(client, stamp_configs, output_dir, progress_callback, ai_text=False):
+def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
+                          ai_text=False, ref_image=None):
     from stamp_generator import generate_character_image, add_styled_text, build_image_prompt
-    import zipfile
+    import base64, io, zipfile
+    from PIL import Image as PILImage
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     generated_paths = []
@@ -66,19 +68,30 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback, 
             progress_callback(i, len(stamp_configs), f"「{config['phrase']}」を生成中…")
 
         if ai_text:
-            # AIにテキスト込みで全部描いてもらう
             prompt = _build_full_prompt(config)
-            response = client.images.generate(
-                model="gpt-image-1",
-                prompt=prompt,
-                size="1024x1024",
-                n=1,
-            )
-            import base64, io
-            from PIL import Image as PILImage
+            if ref_image is not None:
+                # 元絵あり → images.edit でキャラクター一貫性を保つ
+                buf = io.BytesIO()
+                ref_image.convert("RGB").save(buf, format="PNG")
+                buf.seek(0)
+                response = client.images.edit(
+                    model="gpt-image-1",
+                    image=("reference.png", buf, "image/png"),
+                    prompt=prompt,
+                    size="1024x1024",
+                    n=1,
+                )
+            else:
+                # 元絵なし → images.generate
+                response = client.images.generate(
+                    model="gpt-image-1",
+                    prompt=prompt,
+                    size="1024x1024",
+                    n=1,
+                )
+            from stamp_generator import STAMP_W, STAMP_H
             img_b64 = response.data[0].b64_json
             stamp = PILImage.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
-            from stamp_generator import STAMP_W, STAMP_H
             stamp = stamp.resize((STAMP_W, STAMP_H), PILImage.LANCZOS)
         else:
             char_img = generate_character_image(
@@ -86,7 +99,7 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback, 
                 config.get("character_desc", ""),
                 config.get("art_style", ""),
                 config.get("expression", ""),
-                ref_image=None,
+                ref_image=ref_image,
             )
             stamp = add_styled_text(char_img, config["phrase"], config.get("text_style", ""))
 
@@ -119,6 +132,23 @@ with tab_batch:
         "「========No.1「セリフ」========」の区切り形式で複数スタンプを一括生成できます。"
         "【キャラクター設定】【画風】【セリフ】【表情・ポーズ】を自動認識します。"
     )
+
+    # 元絵アップロード
+    col_ref, col_hint = st.columns([1, 2])
+    with col_ref:
+        batch_ref_upload = st.file_uploader(
+            "元絵（任意）", type=["png", "jpg", "jpeg"], key="batch_ref"
+        )
+        batch_ref_image = None
+        if batch_ref_upload:
+            batch_ref_image = Image.open(batch_ref_upload).convert("RGBA")
+            st.image(batch_ref_image, caption="参照キャラクター", width=160)
+    with col_hint:
+        st.info(
+            "**元絵を添付するとキャラクターが安定します**\n\n"
+            "添付あり → `images.edit`（元絵のキャラを参照して生成）\n"
+            "添付なし → `images.generate`（プロンプトのみで生成）"
+        )
 
     batch_text = st.text_area(
         "プロンプトブロック",
@@ -197,6 +227,7 @@ No.2「海行きたい！」
                 zip_path = _run_batch_generation(
                     client, stamp_configs, output_dir, batch_progress,
                     ai_text=ai_text_mode,
+                    ref_image=batch_ref_image,
                 )
                 progress_bar.progress(1.0)
                 status_text.text("✅ 生成完了！")
