@@ -32,8 +32,30 @@ client = OpenAI(api_key=api_key)
 # ======================================================
 # 共通生成関数（タブより前に定義）
 # ======================================================
-def _run_batch_generation(client, stamp_configs, output_dir, progress_callback):
-    from stamp_generator import generate_character_image, add_styled_text
+def _build_full_prompt(config: dict) -> str:
+    """プロンプトブロックの全要素をそのままAIに渡す文字列を構築。"""
+    parts = [
+        "LINEスタンプ風イラスト。1024×1024ピクセル、白背景。"
+        "キャラクターは中央に大きく配置。",
+    ]
+    if config.get("character_desc"):
+        parts.append(f"【キャラクター設定】\n{config['character_desc']}")
+    if config.get("art_style"):
+        parts.append(f"【画風】\n{config['art_style']}")
+    if config.get("phrase"):
+        phrase = config["phrase"]
+        text_style = config.get("text_style", "")
+        serif_block = f'【セリフ】「{phrase}」'
+        if text_style:
+            serif_block += f"\n・{text_style}"
+        parts.append(serif_block)
+    if config.get("expression"):
+        parts.append(f"【表情・ポーズ】\n{config['expression']}")
+    return "\n\n".join(parts)
+
+
+def _run_batch_generation(client, stamp_configs, output_dir, progress_callback, ai_text=False):
+    from stamp_generator import generate_character_image, add_styled_text, build_image_prompt
     import zipfile
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -43,14 +65,30 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback):
         if progress_callback:
             progress_callback(i, len(stamp_configs), f"「{config['phrase']}」を生成中…")
 
-        char_img = generate_character_image(
-            client,
-            config.get("character_desc", ""),
-            config.get("art_style", ""),
-            config.get("expression", ""),
-            ref_image=None,
-        )
-        stamp = add_styled_text(char_img, config["phrase"], config.get("text_style", ""))
+        if ai_text:
+            # AIにテキスト込みで全部描いてもらう
+            prompt = _build_full_prompt(config)
+            response = client.images.generate(
+                model="gpt-image-1",
+                prompt=prompt,
+                size="1024x1024",
+                n=1,
+            )
+            import base64, io
+            from PIL import Image as PILImage
+            img_b64 = response.data[0].b64_json
+            stamp = PILImage.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
+            from stamp_generator import STAMP_W, STAMP_H
+            stamp = stamp.resize((STAMP_W, STAMP_H), PILImage.LANCZOS)
+        else:
+            char_img = generate_character_image(
+                client,
+                config.get("character_desc", ""),
+                config.get("art_style", ""),
+                config.get("expression", ""),
+                ref_image=None,
+            )
+            stamp = add_styled_text(char_img, config["phrase"], config.get("text_style", ""))
 
         filename = out / f"stamp_{i+1:02d}.png"
         stamp.save(filename, "PNG")
@@ -105,6 +143,14 @@ No.2「海行きたい！」
 ...""",
     )
 
+    # テキスト生成モード選択
+    text_mode = st.radio(
+        "テキスト（セリフ）の生成方法",
+        ["🤖 AIに全部任せる（セリフもAIが描画）", "🖊️ Pillowで確実描画（セリフを後で合成）"],
+        help="AIモードはより自然なテキストデザインになりますが、日本語の文字が化ける場合があります。",
+    )
+    ai_text_mode = text_mode.startswith("🤖")
+
     # プレビュー
     if batch_text.strip():
         parsed = parse_stamp_block(batch_text)
@@ -149,7 +195,8 @@ No.2「海行きたい！」
                 ]
 
                 zip_path = _run_batch_generation(
-                    client, stamp_configs, output_dir, batch_progress
+                    client, stamp_configs, output_dir, batch_progress,
+                    ai_text=ai_text_mode,
                 )
                 progress_bar.progress(1.0)
                 status_text.text("✅ 生成完了！")
