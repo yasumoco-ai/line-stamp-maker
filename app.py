@@ -10,6 +10,33 @@ from batch_parser import parse_stamp_block
 st.set_page_config(page_title="LINEスタンプメーカー", page_icon="🎨", layout="wide")
 st.title("🎨 LINEスタンプメーカー")
 
+# セッション内スタンプ保存領域
+if "saved_stamps" not in st.session_state:
+    st.session_state["saved_stamps"] = []  # list of (filename, bytes)
+
+# 保存済みスタンプのダウンロードバー（常に表示）
+if st.session_state["saved_stamps"]:
+    import zipfile, io as _io
+    buf = _io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for fname, data in st.session_state["saved_stamps"]:
+            zf.writestr(fname, data)
+    buf.seek(0)
+    col_dl, col_clear = st.columns([3, 1])
+    with col_dl:
+        st.download_button(
+            f"💾 保存済みスタンプをダウンロード（{len(st.session_state['saved_stamps'])}枚）",
+            data=buf.read(),
+            file_name="saved_stamps.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
+    with col_clear:
+        if st.button("🗑️ クリア", use_container_width=True):
+            st.session_state["saved_stamps"] = []
+            st.rerun()
+    st.divider()
+
 # --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ 設定")
@@ -108,6 +135,15 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
         filename = out / f"{i+1:02d}.png"
         stamp.save(filename, "PNG")
         generated_paths.append(filename)
+
+        # セッションに即時保存（APIが途中で切れても失わない）
+        import io as _io2
+        buf2 = _io2.BytesIO()
+        stamp.save(buf2, "PNG")
+        fname = f"{i+1:02d}.png"
+        existing = [n for n, _ in st.session_state.get("saved_stamps", [])]
+        if fname not in existing:
+            st.session_state.setdefault("saved_stamps", []).append((fname, buf2.getvalue()))
 
     tab_src = Image.open(generated_paths[0]).resize((96, 74)) if generated_paths \
         else Image.new("RGBA", (96, 74), (200, 200, 200, 255))
