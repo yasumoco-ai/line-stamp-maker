@@ -46,6 +46,12 @@ with st.sidebar:
     st.markdown("**LINEスタンプ規格**")
     st.markdown("- サイズ：370×320px\n- 形式：PNG\n- 枚数：8〜40枚")
     st.divider()
+    create_icons = st.checkbox(
+        "main.png / tab.png を作成する",
+        value=True,
+        help="LINE Creators Market への申請に必要なメイン画像とタブ画像をZIPに含めます。"
+    )
+    st.divider()
     st.markdown("**💰 APIコスト目安**")
     st.markdown("gpt-image-1\n- 1枚あたり約 $0.04〜0.08\n- 8枚セットで約 $0.3〜0.6")
 
@@ -82,7 +88,7 @@ def _build_full_prompt(config: dict) -> str:
 
 
 def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
-                          ai_text=False, ref_image=None):
+                          ai_text=False, ref_image=None, create_icons=True):
     from stamp_generator import generate_character_image, add_styled_text, build_image_prompt
     import base64, io, zipfile
     from PIL import Image as PILImage
@@ -145,23 +151,20 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
         if fname not in existing:
             st.session_state.setdefault("saved_stamps", []).append((fname, buf2.getvalue()))
 
-    tab_src = Image.open(generated_paths[0]).resize((96, 74)) if generated_paths \
-        else Image.new("RGBA", (96, 74), (200, 200, 200, 255))
-    tab_path = out / "tab.png"
-    tab_src.save(tab_path, "PNG")
-
-    # main.png（240×240、01.pngを縮小）
-    main_src = Image.open(generated_paths[0]).resize((240, 240), PILImage.LANCZOS) if generated_paths \
-        else PILImage.new("RGBA", (240, 240), (200, 200, 200, 255))
-    main_path = out / "main.png"
-    main_src.save(main_path, "PNG")
-
     zip_path = str(out) + ".zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         for p in generated_paths:
             zf.write(p, p.name)
-        zf.write(tab_path, "tab.png")
-        zf.write(main_path, "main.png")
+        if create_icons and generated_paths:
+            tab_src = Image.open(generated_paths[0]).resize((96, 74))
+            tab_path = out / "tab.png"
+            tab_src.save(tab_path, "PNG")
+            zf.write(tab_path, "tab.png")
+
+            main_src = Image.open(generated_paths[0]).resize((240, 240), PILImage.LANCZOS)
+            main_path = out / "main.png"
+            main_src.save(main_path, "PNG")
+            zf.write(main_path, "main.png")
     return zip_path
 
 
@@ -273,6 +276,7 @@ No.2「海行きたい！」
                     client, stamp_configs, output_dir, batch_progress,
                     ai_text=ai_text_mode,
                     ref_image=batch_ref_image,
+                    create_icons=create_icons,
                 )
                 progress_bar.progress(1.0)
                 status_text.text("✅ 生成完了！")
@@ -362,7 +366,8 @@ with tab_manual:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = os.path.join(tmpdir, "stamps")
             try:
-                zip_path = _run_batch_generation(client, valid_manual, output_dir, manual_progress)
+                zip_path = _run_batch_generation(client, valid_manual, output_dir, manual_progress,
+                                                create_icons=create_icons)
                 progress_bar2.progress(1.0)
                 status_text2.text("✅ 生成完了！")
                 stamp_files = sorted(Path(output_dir).glob("[0-9]*.png"))
