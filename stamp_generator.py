@@ -322,47 +322,22 @@ def _gemini_post(api_key: str, url: str, payload: dict) -> dict:
     return resp.json()
 
 
-def _translate_to_english(api_key: str, character_desc: str,
-                          art_style: str, expression: str) -> str:
-    """日本語のキャラクター設定を英語に翻訳。"""
-    text = (
-        "Translate this LINE sticker character description from Japanese to English. "
-        "Output only the English translation, concise, suitable for image generation.\n\n"
-        f"Character: {character_desc}\nArt style: {art_style}\nPose/Expression: {expression}"
-    )
-    # 新しいモデル名で翻訳（テキスト生成）
-    for model in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash"]:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-            payload = {"contents": [{"parts": [{"text": text}]}]}
-            data = _gemini_post(api_key, url, payload)
-            parts = data["candidates"][0]["content"]["parts"]
-            return "".join(p.get("text", "") for p in parts).strip()
-        except Exception:
-            continue
-    return (
-        f"character: {character_desc[:200]}, "
-        f"art style: {art_style[:100]}, "
-        f"pose: {expression[:100]}"
-    )
-
-
 def generate_character_image_gemini(
     api_key: str,
     character_desc: str,
     art_style: str,
     expression: str,
 ) -> Image.Image:
-    """Gemini 2.5/3.x Interactions APIで画像生成。"""
-    import requests as _req
-
-    english = _translate_to_english(api_key, character_desc, art_style, expression)
+    """Gemini 2.5/3.x Interactions APIで画像生成（日本語直接送信・翻訳なし）。"""
+    # 翻訳ステップを省いて直接日本語で送る（APIが日本語対応済み・quota節約）
     prompt = (
-        "LINE sticker illustration. 1024x1024px, transparent background. "
-        "Character placed large at center. NO text or letters in image. "
-        "MANDATORY: extremely dynamic and exaggerated pose, explosive energy, "
-        "maximum movement, anime-style over-the-top expression, never static.\n"
-        + english
+        "LINEスタンプイラスト。1024x1024px、背景透明。"
+        "キャラクターを中央に大きく配置。画像内にテキスト・文字は一切描かない。"
+        "必須：非常にダイナミックで誇張したポーズ、爆発的なエネルギー、"
+        "最大限の動き、アニメ的な大げさな表情、静止ポーズは絶対禁止。\n"
+        f"【キャラクター】{character_desc}\n"
+        f"【画風】{art_style}\n"
+        f"【ポーズ・表情】{expression}"
     )
 
     # Interactions API（新形式、2026年〜）
