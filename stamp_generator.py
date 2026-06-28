@@ -321,12 +321,12 @@ def _translate_to_english(api_key: str, character_desc: str,
 
 
 def _find_image_gen_model(gclient) -> str | None:
-    """利用可能な画像生成対応モデルを動的に検索する。"""
+    """利用可能な画像生成対応モデルを動的に検索する（flash-expを優先）。"""
     try:
-        preferred_keywords = ["image-generation", "imagen", "flash-exp"]
         for model in gclient.models.list():
             name = model.name.replace("models/", "")
-            if any(kw in name for kw in preferred_keywords):
+            # flash-exp が最も安定した画像生成対応モデル
+            if "flash-exp" in name and "image" not in name:
                 return name
     except Exception:
         pass
@@ -343,7 +343,11 @@ def generate_character_image_gemini(
     from google import genai as gai
     from google.genai import types as gtypes
 
-    gclient = gai.Client(api_key=api_key)
+    # 画像生成モデルは v1alpha でしか動かないものがある
+    gclient = gai.Client(
+        api_key=api_key,
+        http_options=gtypes.HttpOptions(api_version="v1alpha"),
+    )
 
     # 日本語→英語翻訳（ASCIIエラー回避）
     english = _translate_to_english(api_key, character_desc, art_style, expression)
@@ -355,14 +359,16 @@ def generate_character_image_gemini(
         + english
     )
 
-    # 動的にモデルを検索して試す
+    # 動的にモデルを検索して試す（flash-exp 系を優先）
     dynamic_model = _find_image_gen_model(gclient)
     candidates = []
     if dynamic_model:
         candidates.append(dynamic_model)
-    # 固定フォールバックリスト
-    for m in ["gemini-2.0-flash-exp", "gemini-2.0-flash",
-              "gemini-1.5-flash", "gemini-2.0-flash-preview-image-generation"]:
+    # 固定フォールバックリスト（preview-image-generation は最後）
+    for m in ["gemini-2.0-flash-exp",
+              "gemini-2.0-flash-preview-image-generation",
+              "gemini-2.0-flash",
+              "gemini-1.5-flash"]:
         if m not in candidates:
             candidates.append(m)
 
