@@ -304,41 +304,33 @@ def generate_character_image(
     return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
 
 
-_GEMINI_IMAGE_MODELS = [
-    "gemini-2.0-flash-exp",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-preview-image-generation",
-    "gemini-1.5-flash",
-]
-
-
-def _translate_for_image_generation(api_key: str, character_desc: str,
-                                    art_style: str, expression: str) -> str:
-    """日本語のキャラクター設定を英語に翻訳してから画像プロンプトを構築。
-    Gemini画像生成モデルはASCII範囲外の文字でエラーになるため必須。"""
+def _translate_to_english(api_key: str, character_desc: str,
+                          art_style: str, expression: str) -> str:
+    """日本語のキャラクター設定を英語に翻訳（日本語はASCIIエラーになるため必須）。"""
     from google import genai as gai
     gclient = gai.Client(api_key=api_key)
-
-    translate_prompt = (
-        "Translate the following LINE sticker character description from Japanese to English. "
-        "Output only the English translation, concise and suitable for image generation.\n\n"
-        f"Character: {character_desc}\n"
-        f"Art style: {art_style}\n"
-        f"Pose/Expression: {expression}"
-    )
     resp = gclient.models.generate_content(
         model="gemini-2.0-flash",
-        contents=translate_prompt,
+        contents=(
+            "Translate this LINE sticker character description from Japanese to English. "
+            "Output only the English translation, concise, suitable for image generation.\n\n"
+            f"Character: {character_desc}\nArt style: {art_style}\nPose/Expression: {expression}"
+        ),
     )
-    english = resp.text.strip()
+    return resp.text.strip()
 
-    return (
-        "LINE sticker illustration. 1024x1024px, transparent background. "
-        "Character placed large at center. NO text or letters in image. "
-        "MANDATORY: extremely dynamic and exaggerated pose, explosive energy, "
-        "maximum movement, anime-style over-the-top expression, never static. "
-        f"\n{english}"
-    )
+
+def _find_image_gen_model(gclient) -> str | None:
+    """利用可能な画像生成対応モデルを動的に検索する。"""
+    try:
+        preferred_keywords = ["image-generation", "imagen", "flash-exp"]
+        for model in gclient.models.list():
+            name = model.name.replace("models/", "")
+            if any(kw in name for kw in preferred_keywords):
+                return name
+    except Exception:
+        pass
+    return None
 
 
 def generate_character_image_gemini(
@@ -347,16 +339,35 @@ def generate_character_image_gemini(
     art_style: str,
     expression: str,
 ) -> Image.Image:
-    """Gemini で画像を生成する（日本語→英語翻訳後に画像生成）。"""
+    """Gemini で画像を生成する（モデルを動的検索＋Imagen 3フォールバック）。"""
     from google import genai as gai
     from google.genai import types as gtypes
 
     gclient = gai.Client(api_key=api_key)
-    # 日本語プロンプトを英語に翻訳してから画像生成に渡す
-    prompt = _translate_for_image_generation(api_key, character_desc, art_style, expression)
+
+    # 日本語→英語翻訳（ASCIIエラー回避）
+    english = _translate_to_english(api_key, character_desc, art_style, expression)
+    prompt = (
+        "LINE sticker illustration. 1024x1024px, transparent background. "
+        "Character placed large at center. NO text or letters in image. "
+        "MANDATORY: extremely dynamic and exaggerated pose, explosive energy, "
+        "maximum movement, anime-style over-the-top expression, never static.\n"
+        + english
+    )
+
+    # 動的にモデルを検索して試す
+    dynamic_model = _find_image_gen_model(gclient)
+    candidates = []
+    if dynamic_model:
+        candidates.append(dynamic_model)
+    # 固定フォールバックリスト
+    for m in ["gemini-2.0-flash-exp", "gemini-2.0-flash",
+              "gemini-1.5-flash", "gemini-2.0-flash-preview-image-generation"]:
+        if m not in candidates:
+            candidates.append(m)
 
     last_error = None
-    for model_name in _GEMINI_IMAGE_MODELS:
+    for model_name in candidates:
         try:
             response = gclient.models.generate_content(
                 model=model_name,
@@ -373,20 +384,23 @@ def generate_character_image_gemini(
             last_error = e
             continue
 
-    # 全モデル失敗 → Imagen 3 を試す
-    try:
-        response = gclient.models.generate_images(
-            model="imagen-3.0-generate-002",
-            prompt=prompt,
-            config=gtypes.GenerateImagesConfig(number_of_images=1),
-        )
-        img_bytes = response.generated_images[0].image.image_bytes
-        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-        return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
-    except Exception as e:
-        last_error = e
+    # generateContent 全滅 → Imagen 3（課金ユーザー向け）
+    for imagen_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
+        try:
+            response = gclient.models.generate_images(
+                model=imagen_model,
+                prompt=prompt,
+                config=gtypes.GenerateImagesConfig(number_of_images=1),
+            )
+            img_bytes = response.generated_images[0].image.image_bytes
+            img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+            return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+        except Exception as e:
+            last_error = e
 
-    raise ValueError(f"Geminiで画像生成できませんでした: {last_error}")
+    raise ValueError(
+        f"Geminiで画像生成できませんでした。利用可能な画像生成モデルが見つかりません。\n詳細: {last_error}"
+    )
 
 
 def create_stamp_zip(
