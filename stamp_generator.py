@@ -304,32 +304,60 @@ def generate_character_image(
     return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
 
 
+_GEMINI_IMAGE_MODELS = [
+    "gemini-2.0-flash-exp",
+    "gemini-2.0-flash-preview-image-generation",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+]
+
+
 def generate_character_image_gemini(
     api_key: str,
     character_desc: str,
     art_style: str,
     expression: str,
 ) -> Image.Image:
-    """Gemini 2.0 Flash でキャラクター画像を生成する。"""
+    """Gemini で画像を生成する（モデルを順に試してフォールバック）。"""
     from google import genai as gai
     from google.genai import types as gtypes
 
     gclient = gai.Client(api_key=api_key)
     prompt = build_image_prompt(character_desc, art_style, expression)
 
-    response = gclient.models.generate_content(
-        model="gemini-2.0-flash-preview-image-generation",
-        contents=prompt,
-        config=gtypes.GenerateContentConfig(
-            response_modalities=["TEXT", "IMAGE"]
-        ),
-    )
-    for part in response.candidates[0].content.parts:
-        if part.inline_data is not None:
-            img = Image.open(io.BytesIO(part.inline_data.data)).convert("RGBA")
-            return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+    last_error = None
+    for model_name in _GEMINI_IMAGE_MODELS:
+        try:
+            response = gclient.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=gtypes.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"]
+                ),
+            )
+            for part in response.candidates[0].content.parts:
+                if part.inline_data is not None:
+                    img = Image.open(io.BytesIO(part.inline_data.data)).convert("RGBA")
+                    return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+        except Exception as e:
+            last_error = e
+            continue
 
-    raise ValueError("Geminiから画像が返されませんでした")
+    # 全モデル失敗 → Imagen 3 を試す
+    try:
+        from google.genai import types as gtypes
+        response = gclient.models.generate_images(
+            model="imagen-3.0-generate-002",
+            prompt=prompt,
+            config=gtypes.GenerateImagesConfig(number_of_images=1),
+        )
+        img_bytes = response.generated_images[0].image.image_bytes
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+    except Exception as e:
+        last_error = e
+
+    raise ValueError(f"Geminiで画像生成できませんでした: {last_error}")
 
 
 def create_stamp_zip(
