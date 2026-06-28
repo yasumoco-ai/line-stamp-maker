@@ -42,15 +42,18 @@ if st.session_state["saved_zip"] is not None:
 with st.sidebar:
     st.header("⚙️ 設定")
 
-    provider = st.radio("生成AIプロバイダー", ["OpenAI (gpt-image-1)", "Gemini (無料枠あり)"],
-                        help="Geminiはサブスク不要・無料枠あり。OpenAIはAPIキーが必要（有料）。")
-    use_gemini = provider.startswith("Gemini")
+    provider = st.radio("生成AIプロバイダー", [
+        "OpenAI (gpt-image-1)",
+        "HuggingFace FLUX.1 (無料)",
+    ], help="FLUX.1は無料HuggingFaceアカウントのトークンで使えます。")
+    use_flux = provider.startswith("HuggingFace")
+    use_gemini = False  # Gemini画像生成は無料枠なし（廃止）
 
-    if use_gemini:
-        api_key = st.text_input("Gemini APIキー", type="password", placeholder="AIza...")
-        st.caption("Google AI Studio (aistudio.google.com) で無料取得できます。")
-        st.markdown("**💰 Geminiコスト目安**")
-        st.markdown("gemini-2.0-flash\n- 無料枠：1日1,500リクエスト\n- 超過時は低コスト")
+    if use_flux:
+        api_key = st.text_input("HuggingFace トークン", type="password", placeholder="hf_...")
+        st.caption("huggingface.co で無料アカウント作成→Settings→Access Tokensで取得")
+        st.markdown("**💰 FLUXコスト目安**")
+        st.markdown("FLUX.1-schnell\n- 無料枠あり（1日上限あり）\n- 背景は白（透過なし）")
     else:
         api_key = st.text_input("OpenAI APIキー", type="password", placeholder="sk-...")
         st.caption("セッション内のみ使用。保存されません。")
@@ -71,7 +74,7 @@ if not api_key:
     st.info("サイドバーにAPIキーを入力してください。")
     st.stop()
 
-client = None if use_gemini else OpenAI(api_key=api_key)
+client = None if (use_gemini or use_flux) else OpenAI(api_key=api_key)
 
 
 # ======================================================
@@ -101,8 +104,9 @@ def _build_full_prompt(config: dict) -> str:
 
 def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
                           ai_text=False, ref_image=None, create_icons=True,
-                          gemini_api_key=None):
-    from stamp_generator import generate_character_image, generate_character_image_gemini, add_styled_text, build_image_prompt
+                          gemini_api_key=None, hf_token=None):
+    from stamp_generator import (generate_character_image, generate_character_image_gemini,
+                                  generate_character_image_flux, add_styled_text, build_image_prompt)
     import base64, io, zipfile
     from PIL import Image as PILImage
     out = Path(output_dir)
@@ -111,12 +115,11 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
 
     for i, config in enumerate(stamp_configs):
         if progress_callback:
-            progress_callback(i, len(stamp_configs), f"「{config['phrase']}」を生成中…")
+            progress_callback(i, len(stamp_configs), f"No.{i+1} を生成中…")
 
         if ai_text:
             prompt = _build_full_prompt(config)
             if ref_image is not None:
-                # 元絵あり → images.edit でキャラクター一貫性を保つ
                 buf = io.BytesIO()
                 ref_image.convert("RGB").save(buf, format="PNG")
                 buf.seek(0)
@@ -129,7 +132,6 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
                     n=1,
                 )
             else:
-                # 元絵なし → images.generate
                 response = client.images.generate(
                     model="gpt-image-1",
                     prompt=prompt,
@@ -142,7 +144,14 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
             stamp = PILImage.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
             stamp = stamp.resize((STAMP_W, STAMP_H), PILImage.LANCZOS)
         else:
-            if gemini_api_key:
+            if hf_token:
+                char_img = generate_character_image_flux(
+                    hf_token,
+                    config.get("character_desc", ""),
+                    config.get("art_style", ""),
+                    config.get("expression", ""),
+                )
+            elif gemini_api_key:
                 char_img = generate_character_image_gemini(
                     gemini_api_key,
                     config.get("character_desc", ""),
@@ -204,7 +213,7 @@ with tab_batch:
 
     # 元絵アップロード（OpenAIのみ）
     batch_ref_image = None
-    if not use_gemini:
+    if not use_gemini and not use_flux:
         col_ref, col_hint = st.columns([1, 2])
         with col_ref:
             batch_ref_upload = st.file_uploader(
@@ -220,7 +229,7 @@ with tab_batch:
                 "添付なし → `images.generate`（プロンプトのみで生成）"
             )
     else:
-        st.info("ℹ️ Geminiモードでは元絵参照は非対応です。キャラクター設定欄に詳細を記述してください。")
+        st.info("ℹ️ このモードでは元絵参照は非対応です。キャラクター設定欄に詳細を記述してください。")
 
     batch_text = st.text_area(
         "プロンプトブロック",
@@ -246,8 +255,8 @@ No.2「海行きたい！」
     )
 
     # テキスト生成モード選択（Geminiは自動的にPillow描画）
-    if use_gemini:
-        st.info("ℹ️ Geminiモードはセリフを自動的にPillowで描画します（文字化けなし）。")
+    if use_gemini or use_flux:
+        st.info("ℹ️ このモードはセリフを自動的にPillowで描画します（文字化けなし）。")
         ai_text_mode = False
     else:
         text_mode = st.radio(
@@ -306,6 +315,7 @@ No.2「海行きたい！」
                     ref_image=batch_ref_image,
                     create_icons=create_icons,
                     gemini_api_key=api_key if use_gemini else None,
+                    hf_token=api_key if use_flux else None,
                 )
                 progress_bar.progress(1.0)
                 status_text.text("✅ 生成完了！")
@@ -346,13 +356,13 @@ with tab_manual:
     col_img, col_desc = st.columns([1, 2])
     with col_img:
         ref_image = None
-        if not use_gemini:
+        if not use_gemini and not use_flux:
             uploaded = st.file_uploader("元画像（任意・PNG/JPG）", type=["png", "jpg", "jpeg"])
             if uploaded:
                 ref_image = Image.open(uploaded).convert("RGBA")
                 st.image(ref_image, caption="参照キャラクター", width=200)
         else:
-            st.info("ℹ️ Geminiモードでは元絵参照は非対応です。")
+            st.info("ℹ️ このモードでは元絵参照は非対応です。")
 
     with col_desc:
         character_desc = st.text_area(

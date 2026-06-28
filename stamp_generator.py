@@ -304,6 +304,35 @@ def generate_character_image(
     return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
 
 
+def generate_character_image_flux(
+    hf_token: str,
+    character_desc: str,
+    art_style: str,
+    expression: str,
+) -> Image.Image:
+    """HuggingFace FLUX.1-schnell で画像生成（無料枠あり）。"""
+    import requests as _req
+    import time as _time
+
+    prompt = build_image_prompt(character_desc, art_style, expression)
+
+    url = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+    headers = {"Authorization": f"Bearer {hf_token}"}
+
+    for attempt in range(3):
+        resp = _req.post(url, headers=headers, json={"inputs": prompt}, timeout=120)
+        if resp.status_code == 503:
+            # モデルロード中 → 待機してリトライ
+            _time.sleep(25)
+            continue
+        if resp.status_code != 200:
+            raise ValueError(f"FLUX APIエラー HTTP {resp.status_code}: {resp.text[:300]}")
+        img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
+        return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+
+    raise ValueError("FLUX APIが応答しませんでした（モデルがロード中の可能性。30秒後に再試行してください）")
+
+
 def _gemini_post(api_key: str, url: str, payload: dict) -> dict:
     """Gemini REST APIにPOSTする共通関数（UTF-8エンコード保証）。"""
     import json as _json
