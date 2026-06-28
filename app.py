@@ -202,22 +202,25 @@ with tab_batch:
         "【キャラクター設定】【画風】【セリフ】【表情・ポーズ】を自動認識します。"
     )
 
-    # 元絵アップロード
-    col_ref, col_hint = st.columns([1, 2])
-    with col_ref:
-        batch_ref_upload = st.file_uploader(
-            "元絵（任意）", type=["png", "jpg", "jpeg"], key="batch_ref"
-        )
-        batch_ref_image = None
-        if batch_ref_upload:
-            batch_ref_image = Image.open(batch_ref_upload).convert("RGBA")
-            st.image(batch_ref_image, caption="参照キャラクター", width=160)
-    with col_hint:
-        st.info(
-            "**元絵を添付するとキャラクターが安定します**\n\n"
-            "添付あり → `images.edit`（元絵のキャラを参照して生成）\n"
-            "添付なし → `images.generate`（プロンプトのみで生成）"
-        )
+    # 元絵アップロード（OpenAIのみ）
+    batch_ref_image = None
+    if not use_gemini:
+        col_ref, col_hint = st.columns([1, 2])
+        with col_ref:
+            batch_ref_upload = st.file_uploader(
+                "元絵（任意）", type=["png", "jpg", "jpeg"], key="batch_ref"
+            )
+            if batch_ref_upload:
+                batch_ref_image = Image.open(batch_ref_upload).convert("RGBA")
+                st.image(batch_ref_image, caption="参照キャラクター", width=160)
+        with col_hint:
+            st.info(
+                "**元絵を添付するとキャラクターが安定します**\n\n"
+                "添付あり → `images.edit`（元絵のキャラを参照して生成）\n"
+                "添付なし → `images.generate`（プロンプトのみで生成）"
+            )
+    else:
+        st.info("ℹ️ Geminiモードでは元絵参照は非対応です。キャラクター設定欄に詳細を記述してください。")
 
     batch_text = st.text_area(
         "プロンプトブロック",
@@ -242,13 +245,17 @@ No.2「海行きたい！」
 ...""",
     )
 
-    # テキスト生成モード選択
-    text_mode = st.radio(
-        "テキスト（セリフ）の生成方法",
-        ["🤖 AIに全部任せる（セリフもAIが描画）", "🖊️ Pillowで確実描画（セリフを後で合成）"],
-        help="AIモードはより自然なテキストデザインになりますが、日本語の文字が化ける場合があります。",
-    )
-    ai_text_mode = text_mode.startswith("🤖")
+    # テキスト生成モード選択（Geminiは自動的にPillow描画）
+    if use_gemini:
+        st.info("ℹ️ Geminiモードはセリフを自動的にPillowで描画します（文字化けなし）。")
+        ai_text_mode = False
+    else:
+        text_mode = st.radio(
+            "テキスト（セリフ）の生成方法",
+            ["🤖 AIに全部任せる（セリフもAIが描画）", "🖊️ Pillowで確実描画（セリフを後で合成）"],
+            help="AIモードはより自然なテキストデザインになりますが、日本語の文字が化ける場合があります。",
+        )
+        ai_text_mode = text_mode.startswith("🤖")
 
     # プレビュー
     if batch_text.strip():
@@ -338,11 +345,14 @@ No.2「海行きたい！」
 with tab_manual:
     col_img, col_desc = st.columns([1, 2])
     with col_img:
-        uploaded = st.file_uploader("元画像（任意・PNG/JPG）", type=["png", "jpg", "jpeg"])
         ref_image = None
-        if uploaded:
-            ref_image = Image.open(uploaded).convert("RGBA")
-            st.image(ref_image, caption="参照キャラクター", width=200)
+        if not use_gemini:
+            uploaded = st.file_uploader("元画像（任意・PNG/JPG）", type=["png", "jpg", "jpeg"])
+            if uploaded:
+                ref_image = Image.open(uploaded).convert("RGBA")
+                st.image(ref_image, caption="参照キャラクター", width=200)
+        else:
+            st.info("ℹ️ Geminiモードでは元絵参照は非対応です。")
 
     with col_desc:
         character_desc = st.text_area(
