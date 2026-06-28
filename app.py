@@ -13,27 +13,28 @@ st.title("🎨 LINEスタンプメーカー")
 # セッション内スタンプ保存領域
 if "saved_stamps" not in st.session_state:
     st.session_state["saved_stamps"] = []  # list of (filename, bytes)
+if "saved_zip" not in st.session_state:
+    st.session_state["saved_zip"] = None   # 完成ZIPのバイト列（main/tab含む）
+if "saved_zip_count" not in st.session_state:
+    st.session_state["saved_zip_count"] = 0
 
-# 保存済みスタンプのダウンロードバー（常に表示）
-if st.session_state["saved_stamps"]:
-    import zipfile, io as _io
-    buf = _io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        for fname, data in st.session_state["saved_stamps"]:
-            zf.writestr(fname, data)
-    buf.seek(0)
+# 保存済みZIPのダウンロードバー（常に表示）
+if st.session_state["saved_zip"] is not None:
     col_dl, col_clear = st.columns([3, 1])
     with col_dl:
         st.download_button(
-            f"💾 保存済みスタンプをダウンロード（{len(st.session_state['saved_stamps'])}枚）",
-            data=buf.read(),
-            file_name="saved_stamps.zip",
+            f"💾 保存済みスタンプをダウンロード（{st.session_state['saved_zip_count']}枚・ZIP）",
+            data=st.session_state["saved_zip"],
+            file_name="line_stamps.zip",
             mime="application/zip",
             use_container_width=True,
+            key="top_dl_btn",
         )
     with col_clear:
         if st.button("🗑️ クリア", use_container_width=True):
             st.session_state["saved_stamps"] = []
+            st.session_state["saved_zip"] = None
+            st.session_state["saved_zip_count"] = 0
             st.rerun()
     st.divider()
 
@@ -289,13 +290,18 @@ No.2「海行きたい！」
                 with open(zip_path, "rb") as f:
                     zip_bytes = f.read()
 
-                st.success(f"✨ {len(parsed)}枚のスタンプが完成しました！")
+                # セッションに保存して、ページ再実行後もダウンロード可能にする
+                st.session_state["saved_zip"] = zip_bytes
+                st.session_state["saved_zip_count"] = len(parsed)
+
+                st.success(f"✨ {len(parsed)}枚のスタンプが完成しました！上のボタンからもダウンロードできます。")
                 st.download_button(
                     label="📦 ZIPをダウンロード",
                     data=zip_bytes,
                     file_name="line_stamps.zip",
                     mime="application/zip",
                     use_container_width=True,
+                    key="batch_dl_btn",
                 )
             except Exception as e:
                 import traceback
@@ -376,10 +382,12 @@ with tab_manual:
                         st.image(str(sf), use_container_width=True)
                 with open(zip_path, "rb") as f:
                     zip_bytes = f.read()
-                st.success(f"✨ {len(valid_manual)}枚完成！")
+                st.session_state["saved_zip"] = zip_bytes
+                st.session_state["saved_zip_count"] = len(valid_manual)
+                st.success(f"✨ {len(valid_manual)}枚完成！上のボタンからもダウンロードできます。")
                 st.download_button("📦 ZIPをダウンロード", data=zip_bytes,
                     file_name="line_stamps.zip", mime="application/zip",
-                    use_container_width=True)
+                    use_container_width=True, key="manual_dl_btn")
             except Exception as e:
                 import traceback
                 st.error(f"エラー: {e}")
