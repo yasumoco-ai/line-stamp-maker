@@ -304,33 +304,37 @@ def generate_character_image(
     return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
 
 
+def _gemini_rest(api_key: str, api_ver: str, model: str, payload: dict) -> dict:
+    """Gemini REST APIに直接POSTする（Pythonライブラリのエンコードバグを回避）。"""
+    import requests as _req
+    url = (
+        f"https://generativelanguage.googleapis.com/{api_ver}"
+        f"/models/{model}:generateContent?key={api_key}"
+    )
+    resp = _req.post(url, json=payload, timeout=120)
+    if resp.status_code != 200:
+        raise ValueError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+    return resp.json()
+
+
 def _translate_to_english(api_key: str, character_desc: str,
                           art_style: str, expression: str) -> str:
-    """日本語のキャラクター設定を英語に翻訳（日本語はASCIIエラーになるため必須）。"""
-    from google import genai as gai
-    gclient = gai.Client(api_key=api_key)
-    resp = gclient.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=(
-            "Translate this LINE sticker character description from Japanese to English. "
-            "Output only the English translation, concise, suitable for image generation.\n\n"
-            f"Character: {character_desc}\nArt style: {art_style}\nPose/Expression: {expression}"
-        ),
+    """日本語のキャラクター設定を英語に翻訳（REST APIで日本語を直接送信）。"""
+    text = (
+        "Translate this LINE sticker character description from Japanese to English. "
+        "Output only the English translation, concise, suitable for image generation.\n\n"
+        f"Character: {character_desc}\nArt style: {art_style}\nPose/Expression: {expression}"
     )
-    return resp.text.strip()
-
-
-def _find_image_gen_model(gclient) -> str | None:
-    """利用可能な画像生成対応モデルを動的に検索する（flash-expを優先）。"""
-    try:
-        for model in gclient.models.list():
-            name = model.name.replace("models/", "")
-            # flash-exp が最も安定した画像生成対応モデル
-            if "flash-exp" in name and "image" not in name:
-                return name
-    except Exception:
-        pass
-    return None
+    payload = {"contents": [{"parts": [{"text": text}]}]}
+    for ver in ["v1beta", "v1alpha"]:
+        try:
+            data = _gemini_rest(api_key, ver, "gemini-2.0-flash", payload)
+            parts = data["candidates"][0]["content"]["parts"]
+            return "".join(p.get("text", "") for p in parts).strip()
+        except Exception:
+            continue
+    # 翻訳失敗時は最低限の英語説明を返す
+    return f"character: {character_desc[:200]}, art style: {art_style[:100]}, pose: {expression[:100]}"
 
 
 def generate_character_image_gemini(
@@ -339,17 +343,8 @@ def generate_character_image_gemini(
     art_style: str,
     expression: str,
 ) -> Image.Image:
-    """Gemini で画像を生成する（モデルを動的検索＋Imagen 3フォールバック）。"""
-    from google import genai as gai
-    from google.genai import types as gtypes
-
-    # 画像生成モデルは v1alpha でしか動かないものがある
-    gclient = gai.Client(
-        api_key=api_key,
-        http_options=gtypes.HttpOptions(api_version="v1alpha"),
-    )
-
-    # 日本語→英語翻訳（ASCIIエラー回避）
+    """Gemini で画像を生成する（REST API直接呼び出しでASCIIエラーを回避）。"""
+    # 日本語→英語翻訳
     english = _translate_to_english(api_key, character_desc, art_style, expression)
     prompt = (
         "LINE sticker illustration. 1024x1024px, transparent background. "
@@ -359,65 +354,60 @@ def generate_character_image_gemini(
         + english
     )
 
-    # 動的にモデルを検索して試す（flash-exp 系を優先）
-    dynamic_model = _find_image_gen_model(gclient)
-    candidates = []
-    if dynamic_model:
-        candidates.append(dynamic_model)
-    # 固定フォールバックリスト（preview-image-generation は最後）
-    for m in ["gemini-2.0-flash-exp",
-              "gemini-2.0-flash-preview-image-generation",
-              "gemini-2.0-flash",
-              "gemini-1.5-flash"]:
-        if m not in candidates:
-            candidates.append(m)
+    gen_payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+    }
 
+    # generateContent 系モデルを順に試す
+    candidates = [
+        ("v1alpha", "gemini-2.0-flash-preview-image-generation"),
+        ("v1alpha", "gemini-2.0-flash-exp"),
+        ("v1beta",  "gemini-2.0-flash-exp"),
+        ("v1alpha", "gemini-2.0-flash"),
+    ]
     last_error = None
-    for model_name in candidates:
-        for api_ver in ["v1alpha", "v1beta"]:
-            try:
-                vc = gai.Client(
-                    api_key=api_key,
-                    http_options=gtypes.HttpOptions(api_version=api_ver),
-                )
-                response = vc.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=gtypes.GenerateContentConfig(
-                        response_modalities=["IMAGE", "TEXT"]
-                    ),
-                )
-                for part in response.candidates[0].content.parts:
-                    if part.inline_data is not None:
-                        img = Image.open(io.BytesIO(part.inline_data.data)).convert("RGBA")
+    for api_ver, model_name in candidates:
+        try:
+            data = _gemini_rest(api_key, api_ver, model_name, gen_payload)
+            for cand in data.get("candidates", []):
+                for part in cand.get("content", {}).get("parts", []):
+                    if "inlineData" in part:
+                        img_bytes = base64.b64decode(part["inlineData"]["data"])
+                        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
                         return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
-            except Exception as e:
-                last_error = e
-                continue
+        except Exception as e:
+            last_error = e
+            continue
 
-    # generateContent 全滅 → Imagen 3（課金ユーザー向け）
-    for imagen_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001",
-                         "imagen-4.0-generate-preview-05-20"]:
-        for api_ver in ["v1alpha", "v1beta"]:
-            try:
-                vc = gai.Client(
-                    api_key=api_key,
-                    http_options=gtypes.HttpOptions(api_version=api_ver),
-                )
-                response = vc.models.generate_images(
-                    model=imagen_model,
-                    prompt=prompt,
-                    config=gtypes.GenerateImagesConfig(number_of_images=1),
-                )
-                img_bytes = response.generated_images[0].image.image_bytes
-                img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-                return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
-            except Exception as e:
-                last_error = e
+    # generate_images 系（Imagen）を試す
+    for api_ver, model_name in [("v1alpha", "imagen-3.0-generate-002"),
+                                  ("v1beta",  "imagen-3.0-generate-002"),
+                                  ("v1alpha", "imagen-3.0-fast-generate-001")]:
+        try:
+            img_payload = {
+                "prompt": prompt,
+                "sampleCount": 1,
+            }
+            url_base = (
+                f"https://generativelanguage.googleapis.com/{api_ver}"
+                f"/models/{model_name}:predict?key={api_key}"
+            )
+            import requests as _req
+            resp = _req.post(url_base, json=img_payload, timeout=120)
+            if resp.status_code == 200:
+                result = resp.json()
+                for pred in result.get("predictions", []):
+                    if "bytesBase64Encoded" in pred:
+                        img_bytes = base64.b64decode(pred["bytesBase64Encoded"])
+                        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                        return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+        except Exception as e:
+            last_error = e
 
     raise ValueError(
         f"Geminiで画像生成できませんでした。\n"
-        f"無料Gemini APIでは現在画像生成が利用できない可能性があります。\n"
+        f"無料Gemini APIでは画像生成が利用できない可能性があります。\n"
         f"詳細: {last_error}"
     )
 
