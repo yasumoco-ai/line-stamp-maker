@@ -265,16 +265,20 @@ def build_image_prompt(
 ) -> str:
     """テキストなし・キャラクター＋ポーズのみのプロンプトを構築。"""
     parts = [
-        "LINEスタンプ風イラスト。1024×1024ピクセル、背景は透明。"
-        "キャラクターは中央に大きく配置。テキストや文字は描かないこと。"
-        "表情とポーズは大げさにオーバーアクションで。"
+        "LINE sticker illustration. 1024x1024px, transparent background. "
+        "Character placed large at center. NO text or letters in image. "
+        "MANDATORY: extremely dynamic and exaggerated pose, explosive energy, "
+        "maximum movement and action, anime-style over-the-top expression, "
+        "body in mid-action (jumping, spinning, leaping, flying), "
+        "motion lines, hair and clothes flying, eyes wide and expressive, "
+        "never static or standing still — always caught in maximum motion."
     ]
     if character_desc.strip():
-        parts.append(f"【キャラクター設定】\n{character_desc.strip()}")
+        parts.append(f"CHARACTER:\n{character_desc.strip()}")
     if art_style.strip():
-        parts.append(f"【画風】\n{art_style.strip()}")
+        parts.append(f"ART STYLE:\n{art_style.strip()}")
     if expression.strip():
-        parts.append(f"【表情・ポーズ・エフェクト】\n{expression.strip()}")
+        parts.append(f"POSE & EXPRESSION (execute with maximum exaggeration):\n{expression.strip()}")
     return "\n\n".join(parts)
 
 

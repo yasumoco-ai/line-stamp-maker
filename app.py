@@ -359,6 +359,19 @@ with tab_manual:
         )
 
     st.markdown("#### スタンプの設定")
+    with st.expander("💡 ダイナミックなポーズの書き方", expanded=False):
+        st.markdown("""
+**動き言葉を入れるとポーズが躍動的になります：**
+
+| 弱い表現 | 強い表現 |
+|--------|--------|
+| 嬉しそうなポーズ | 両手を天高く突き上げて飛び跳ね、目が飛び出るほど笑顔 |
+| ジャンプしている | 力強く地面を蹴り上げて空高くジャンプ、髪がなびく |
+| 驚いている | 後ろにのけぞって目ん玉が飛び出し、手足が宙に浮く |
+| 走っている | 猛ダッシュで前傾姿勢、足が残像で描かれるほどのスピード |
+
+**使える動き言葉：** 飛び跳ねる・のけぞる・くるくる回る・宙返り・吹っ飛ぶ・猛ダッシュ・爆発的な笑顔・目ん玉が飛び出る・ほっぺが膨らむ
+        """)
     num_stamps = st.slider("スタンプ枚数", min_value=1, max_value=24, value=4, key="manual_num")
     stamp_configs_manual = []
     for i in range(num_stamps):
@@ -371,7 +384,7 @@ with tab_manual:
                     placeholder="例：スカイブルー、ポップ、白ふち取り")
             with c3:
                 expression = st.text_area("表情・ポーズ", key=f"m_expr_{i}", height=100,
-                    placeholder="例：浮き輪でジャンプ、キラキラ笑顔…")
+                    placeholder="例：両手を天高く突き上げて飛び跳ね、目が飛び出るほど笑顔")
             stamp_configs_manual.append({
                 "phrase": phrase, "text_style": text_style, "expression": expression,
                 "character_desc": character_desc, "art_style": art_style,
