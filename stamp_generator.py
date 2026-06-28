@@ -298,22 +298,34 @@ def build_image_prompt(
     art_style: str,
     expression: str,
 ) -> str:
-    """テキストなし・キャラクター＋ポーズのみのプロンプトを構築。"""
-    parts = [
-        "LINE sticker illustration. 1024x1024px, transparent background. "
-        "Character placed large at center. NO text or letters in image. "
-        "MANDATORY: extremely dynamic and exaggerated pose, explosive energy, "
-        "maximum movement and action, anime-style over-the-top expression, "
-        "body in mid-action (jumping, spinning, leaping, flying), "
-        "motion lines, hair and clothes flying, eyes wide and expressive, "
-        "never static or standing still — always caught in maximum motion."
-    ]
-    if character_desc.strip():
-        parts.append(f"CHARACTER:\n{character_desc.strip()}")
-    if art_style.strip():
-        parts.append(f"ART STYLE:\n{art_style.strip()}")
+    """テキストなし・キャラクター＋ポーズのみのプロンプトを構築。
+    ポーズを冒頭に置く（画像生成AIは冒頭を最優先するため）。"""
+    parts = []
+
+    # ① ポーズ・表情を最初に（最優先）
     if expression.strip():
-        parts.append(f"POSE & EXPRESSION (execute with maximum exaggeration):\n{expression.strip()}")
+        parts.append(
+            f"SCENE: {expression.strip()}\n"
+            "Execute this with MAXIMUM exaggeration — "
+            "over-the-top anime reaction, explosive movement, "
+            "body twisted mid-action, face full of emotion."
+        )
+
+    # ② キャラクター設定
+    if character_desc.strip():
+        parts.append(f"CHARACTER: {character_desc.strip()}")
+
+    # ③ 画風
+    if art_style.strip():
+        parts.append(f"STYLE: {art_style.strip()}")
+
+    # ④ 共通指示（後ろに置く）
+    parts.append(
+        "FORMAT: LINE sticker illustration, 1024x1024px, transparent background, "
+        "character large at center, NO text or letters anywhere in the image, "
+        "motion lines and speed effects, expressive eyes, dynamic composition."
+    )
+
     return "\n\n".join(parts)
 
 
@@ -346,6 +358,7 @@ def generate_character_image_flux(
     expression: str,
 ) -> Image.Image:
     """HuggingFace FLUX.1-schnell で画像生成（huggingface_hub経由）。"""
+    import random
     from huggingface_hub import InferenceClient
 
     prompt = build_image_prompt(character_desc, art_style, expression)
@@ -357,6 +370,7 @@ def generate_character_image_flux(
     pil_img = client.text_to_image(
         prompt,
         model="black-forest-labs/FLUX.1-schnell",
+        seed=random.randint(0, 2**31 - 1),   # 毎回異なるシードで多様性を確保
     )
     img = pil_img.convert("RGBA")
     return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
