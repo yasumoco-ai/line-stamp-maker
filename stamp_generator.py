@@ -306,10 +306,39 @@ def generate_character_image(
 
 _GEMINI_IMAGE_MODELS = [
     "gemini-2.0-flash-exp",
-    "gemini-2.0-flash-preview-image-generation",
     "gemini-2.0-flash",
+    "gemini-2.0-flash-preview-image-generation",
     "gemini-1.5-flash",
 ]
+
+
+def _translate_for_image_generation(api_key: str, character_desc: str,
+                                    art_style: str, expression: str) -> str:
+    """日本語のキャラクター設定を英語に翻訳してから画像プロンプトを構築。
+    Gemini画像生成モデルはASCII範囲外の文字でエラーになるため必須。"""
+    from google import genai as gai
+    gclient = gai.Client(api_key=api_key)
+
+    translate_prompt = (
+        "Translate the following LINE sticker character description from Japanese to English. "
+        "Output only the English translation, concise and suitable for image generation.\n\n"
+        f"Character: {character_desc}\n"
+        f"Art style: {art_style}\n"
+        f"Pose/Expression: {expression}"
+    )
+    resp = gclient.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=translate_prompt,
+    )
+    english = resp.text.strip()
+
+    return (
+        "LINE sticker illustration. 1024x1024px, transparent background. "
+        "Character placed large at center. NO text or letters in image. "
+        "MANDATORY: extremely dynamic and exaggerated pose, explosive energy, "
+        "maximum movement, anime-style over-the-top expression, never static. "
+        f"\n{english}"
+    )
 
 
 def generate_character_image_gemini(
@@ -318,12 +347,13 @@ def generate_character_image_gemini(
     art_style: str,
     expression: str,
 ) -> Image.Image:
-    """Gemini で画像を生成する（モデルを順に試してフォールバック）。"""
+    """Gemini で画像を生成する（日本語→英語翻訳後に画像生成）。"""
     from google import genai as gai
     from google.genai import types as gtypes
 
     gclient = gai.Client(api_key=api_key)
-    prompt = build_image_prompt(character_desc, art_style, expression)
+    # 日本語プロンプトを英語に翻訳してから画像生成に渡す
+    prompt = _translate_for_image_generation(api_key, character_desc, art_style, expression)
 
     last_error = None
     for model_name in _GEMINI_IMAGE_MODELS:
@@ -345,7 +375,6 @@ def generate_character_image_gemini(
 
     # 全モデル失敗 → Imagen 3 を試す
     try:
-        from google.genai import types as gtypes
         response = gclient.models.generate_images(
             model="imagen-3.0-generate-002",
             prompt=prompt,
