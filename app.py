@@ -41,8 +41,22 @@ if st.session_state["saved_zip"] is not None:
 # --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ 設定")
-    api_key = st.text_input("OpenAI APIキー", type="password", placeholder="sk-...")
-    st.caption("セッション内のみ使用。保存されません。")
+
+    provider = st.radio("生成AIプロバイダー", ["OpenAI (gpt-image-1)", "Gemini (無料枠あり)"],
+                        help="Geminiはサブスク不要・無料枠あり。OpenAIはAPIキーが必要（有料）。")
+    use_gemini = provider.startswith("Gemini")
+
+    if use_gemini:
+        api_key = st.text_input("Gemini APIキー", type="password", placeholder="AIza...")
+        st.caption("Google AI Studio (aistudio.google.com) で無料取得できます。")
+        st.markdown("**💰 Geminiコスト目安**")
+        st.markdown("gemini-2.0-flash\n- 無料枠：1日1,500リクエスト\n- 超過時は低コスト")
+    else:
+        api_key = st.text_input("OpenAI APIキー", type="password", placeholder="sk-...")
+        st.caption("セッション内のみ使用。保存されません。")
+        st.markdown("**💰 APIコスト目安**")
+        st.markdown("gpt-image-1\n- 1枚あたり約 $0.04〜0.08\n- 8枚セットで約 $0.3〜0.6")
+
     st.divider()
     st.markdown("**LINEスタンプ規格**")
     st.markdown("- サイズ：370×320px\n- 形式：PNG\n- 枚数：8〜40枚")
@@ -52,15 +66,12 @@ with st.sidebar:
         value=True,
         help="LINE Creators Market への申請に必要なメイン画像とタブ画像をZIPに含めます。"
     )
-    st.divider()
-    st.markdown("**💰 APIコスト目安**")
-    st.markdown("gpt-image-1\n- 1枚あたり約 $0.04〜0.08\n- 8枚セットで約 $0.3〜0.6")
 
 if not api_key:
-    st.info("サイドバーにOpenAI APIキーを入力してください。")
+    st.info("サイドバーにAPIキーを入力してください。")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+client = None if use_gemini else OpenAI(api_key=api_key)
 
 
 # ======================================================
@@ -89,8 +100,9 @@ def _build_full_prompt(config: dict) -> str:
 
 
 def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
-                          ai_text=False, ref_image=None, create_icons=True):
-    from stamp_generator import generate_character_image, add_styled_text, build_image_prompt
+                          ai_text=False, ref_image=None, create_icons=True,
+                          gemini_api_key=None):
+    from stamp_generator import generate_character_image, generate_character_image_gemini, add_styled_text, build_image_prompt
     import base64, io, zipfile
     from PIL import Image as PILImage
     out = Path(output_dir)
@@ -130,13 +142,21 @@ def _run_batch_generation(client, stamp_configs, output_dir, progress_callback,
             stamp = PILImage.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
             stamp = stamp.resize((STAMP_W, STAMP_H), PILImage.LANCZOS)
         else:
-            char_img = generate_character_image(
-                client,
-                config.get("character_desc", ""),
-                config.get("art_style", ""),
-                config.get("expression", ""),
-                ref_image=ref_image,
-            )
+            if gemini_api_key:
+                char_img = generate_character_image_gemini(
+                    gemini_api_key,
+                    config.get("character_desc", ""),
+                    config.get("art_style", ""),
+                    config.get("expression", ""),
+                )
+            else:
+                char_img = generate_character_image(
+                    client,
+                    config.get("character_desc", ""),
+                    config.get("art_style", ""),
+                    config.get("expression", ""),
+                    ref_image=ref_image,
+                )
             stamp = add_styled_text(char_img, config["phrase"], config.get("text_style", ""))
 
         filename = out / f"{i+1:02d}.png"
@@ -278,6 +298,7 @@ No.2「海行きたい！」
                     ai_text=ai_text_mode,
                     ref_image=batch_ref_image,
                     create_icons=create_icons,
+                    gemini_api_key=api_key if use_gemini else None,
                 )
                 progress_bar.progress(1.0)
                 status_text.text("✅ 生成完了！")
@@ -373,7 +394,8 @@ with tab_manual:
             output_dir = os.path.join(tmpdir, "stamps")
             try:
                 zip_path = _run_batch_generation(client, valid_manual, output_dir, manual_progress,
-                                                create_icons=create_icons)
+                                                create_icons=create_icons,
+                                                gemini_api_key=api_key if use_gemini else None)
                 progress_bar2.progress(1.0)
                 status_text2.text("✅ 生成完了！")
                 stamp_files = sorted(Path(output_dir).glob("[0-9]*.png"))

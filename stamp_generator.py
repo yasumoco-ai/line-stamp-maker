@@ -287,7 +287,6 @@ def generate_character_image(
 ) -> Image.Image:
     prompt = build_image_prompt(character_desc, art_style, expression)
 
-    # 参照画像なし → generate（ポーズの自由度が高い）
     response = client.images.generate(
         model="gpt-image-1",
         prompt=prompt,
@@ -299,6 +298,34 @@ def generate_character_image(
     img_b64 = response.data[0].b64_json
     img = Image.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
     return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+
+
+def generate_character_image_gemini(
+    api_key: str,
+    character_desc: str,
+    art_style: str,
+    expression: str,
+) -> Image.Image:
+    """Gemini 2.0 Flash でキャラクター画像を生成する。"""
+    from google import genai as gai
+    from google.genai import types as gtypes
+
+    gclient = gai.Client(api_key=api_key)
+    prompt = build_image_prompt(character_desc, art_style, expression)
+
+    response = gclient.models.generate_content(
+        model="gemini-2.0-flash-preview-image-generation",
+        contents=prompt,
+        config=gtypes.GenerateContentConfig(
+            response_modalities=["TEXT", "IMAGE"]
+        ),
+    )
+    for part in response.candidates[0].content.parts:
+        if part.inline_data is not None:
+            img = Image.open(io.BytesIO(part.inline_data.data)).convert("RGBA")
+            return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+
+    raise ValueError("Geminiから画像が返されませんでした")
 
 
 def create_stamp_zip(
