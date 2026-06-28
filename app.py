@@ -58,7 +58,7 @@ with st.sidebar:
         api_key = st.text_input("OpenAI APIキー", type="password", placeholder="sk-...")
         st.caption("セッション内のみ使用。保存されません。")
         st.markdown("**💰 APIコスト目安**")
-        st.markdown("gpt-image-1\n- 1枚あたり約 $0.04〜0.08\n- 8枚セットで約 $0.3〜0.6")
+        st.markdown("gpt-image-1\n- 1枚あたり約 $0.04〜0.08 ≈ 6〜12円\n- 8枚セットで約50〜100円")
 
     st.divider()
     st.markdown("**LINEスタンプ規格**")
