@@ -304,44 +304,47 @@ def generate_character_image(
     return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
 
 
-def _gemini_rest(api_key: str, api_ver: str, model: str, payload: dict) -> dict:
-    """Gemini REST APIに直接POSTする（Pythonライブラリのエンコードバグを回避）。"""
+def _gemini_post(api_key: str, url: str, payload: dict) -> dict:
+    """Gemini REST APIにPOSTする共通関数（UTF-8エンコード保証）。"""
     import json as _json
     import requests as _req
-    url = (
-        f"https://generativelanguage.googleapis.com/{api_ver}"
-        f"/models/{model}:generateContent?key={api_key}"
-    )
-    # ensure_ascii=False で日本語をそのままUTF-8で送信（ASCIIエラー回避）
     body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
     resp = _req.post(
         url, data=body,
-        headers={"Content-Type": "application/json; charset=utf-8"},
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "x-goog-api-key": api_key,
+        },
         timeout=120,
     )
     if resp.status_code != 200:
-        raise ValueError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+        raise ValueError(f"HTTP {resp.status_code}: {resp.text[:400]}")
     return resp.json()
 
 
 def _translate_to_english(api_key: str, character_desc: str,
                           art_style: str, expression: str) -> str:
-    """日本語のキャラクター設定を英語に翻訳（REST APIで日本語を直接送信）。"""
+    """日本語のキャラクター設定を英語に翻訳。"""
     text = (
         "Translate this LINE sticker character description from Japanese to English. "
         "Output only the English translation, concise, suitable for image generation.\n\n"
         f"Character: {character_desc}\nArt style: {art_style}\nPose/Expression: {expression}"
     )
-    payload = {"contents": [{"parts": [{"text": text}]}]}
-    for ver in ["v1beta", "v1alpha"]:
+    # 新しいモデル名で翻訳（テキスト生成）
+    for model in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash"]:
         try:
-            data = _gemini_rest(api_key, ver, "gemini-2.0-flash", payload)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            payload = {"contents": [{"parts": [{"text": text}]}]}
+            data = _gemini_post(api_key, url, payload)
             parts = data["candidates"][0]["content"]["parts"]
             return "".join(p.get("text", "") for p in parts).strip()
         except Exception:
             continue
-    # 翻訳失敗時は最低限の英語説明を返す
-    return f"character: {character_desc[:200]}, art style: {art_style[:100]}, pose: {expression[:100]}"
+    return (
+        f"character: {character_desc[:200]}, "
+        f"art style: {art_style[:100]}, "
+        f"pose: {expression[:100]}"
+    )
 
 
 def generate_character_image_gemini(
@@ -350,8 +353,9 @@ def generate_character_image_gemini(
     art_style: str,
     expression: str,
 ) -> Image.Image:
-    """Gemini で画像を生成する（REST API直接呼び出しでASCIIエラーを回避）。"""
-    # 日本語→英語翻訳
+    """Gemini 2.5/3.x Interactions APIで画像生成。"""
+    import requests as _req
+
     english = _translate_to_english(api_key, character_desc, art_style, expression)
     prompt = (
         "LINE sticker illustration. 1024x1024px, transparent background. "
@@ -361,22 +365,28 @@ def generate_character_image_gemini(
         + english
     )
 
-    gen_payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
-    }
-
-    # generateContent 系モデルを順に試す
-    candidates = [
-        ("v1alpha", "gemini-2.0-flash-preview-image-generation"),
-        ("v1alpha", "gemini-2.0-flash-exp"),
-        ("v1beta",  "gemini-2.0-flash-exp"),
-        ("v1alpha", "gemini-2.0-flash"),
+    # Interactions API（新形式、2026年〜）
+    interactions_models = [
+        "gemini-2.5-flash-image",
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-image",
+        "gemini-3-pro-image",
     ]
     last_error = None
-    for api_ver, model_name in candidates:
+    for model_name in interactions_models:
         try:
-            data = _gemini_rest(api_key, api_ver, model_name, gen_payload)
+            url = "https://generativelanguage.googleapis.com/v1beta/interactions"
+            payload = {"model": model_name, "input": prompt}
+            data = _gemini_post(api_key, url, payload)
+            # レスポンス形式を探索
+            for key in ["output", "image", "imageData", "data"]:
+                if key in data:
+                    val = data[key]
+                    if isinstance(val, str):
+                        img_bytes = base64.b64decode(val)
+                        img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                        return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+            # parts形式
             for cand in data.get("candidates", []):
                 for part in cand.get("content", {}).get("parts", []):
                     if "inlineData" in part:
@@ -387,35 +397,33 @@ def generate_character_image_gemini(
             last_error = e
             continue
 
-    # generate_images 系（Imagen）を試す
-    for api_ver, model_name in [("v1alpha", "imagen-3.0-generate-002"),
-                                  ("v1beta",  "imagen-3.0-generate-002"),
-                                  ("v1alpha", "imagen-3.0-fast-generate-001")]:
+    # generateContent 旧形式フォールバック
+    gen_models = [
+        ("v1beta", "gemini-2.5-flash-image"),
+        ("v1beta", "gemini-3.1-flash-image-preview"),
+    ]
+    for api_ver, model_name in gen_models:
         try:
-            img_payload = {
-                "prompt": prompt,
-                "sampleCount": 1,
-            }
-            url_base = (
+            url = (
                 f"https://generativelanguage.googleapis.com/{api_ver}"
-                f"/models/{model_name}:predict?key={api_key}"
+                f"/models/{model_name}:generateContent"
             )
-            import requests as _req
-            resp = _req.post(url_base, json=img_payload, timeout=120)
-            if resp.status_code == 200:
-                result = resp.json()
-                for pred in result.get("predictions", []):
-                    if "bytesBase64Encoded" in pred:
-                        img_bytes = base64.b64decode(pred["bytesBase64Encoded"])
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+            }
+            data = _gemini_post(api_key, url, payload)
+            for cand in data.get("candidates", []):
+                for part in cand.get("content", {}).get("parts", []):
+                    if "inlineData" in part:
+                        img_bytes = base64.b64decode(part["inlineData"]["data"])
                         img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
                         return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
         except Exception as e:
             last_error = e
 
     raise ValueError(
-        f"Geminiで画像生成できませんでした。\n"
-        f"無料Gemini APIでは画像生成が利用できない可能性があります。\n"
-        f"詳細: {last_error}"
+        f"Geminiで画像生成できませんでした。\n詳細: {last_error}"
     )
 
 
