@@ -374,38 +374,51 @@ def generate_character_image_gemini(
 
     last_error = None
     for model_name in candidates:
-        try:
-            response = gclient.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=gtypes.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"]
-                ),
-            )
-            for part in response.candidates[0].content.parts:
-                if part.inline_data is not None:
-                    img = Image.open(io.BytesIO(part.inline_data.data)).convert("RGBA")
-                    return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
-        except Exception as e:
-            last_error = e
-            continue
+        for api_ver in ["v1alpha", "v1beta"]:
+            try:
+                vc = gai.Client(
+                    api_key=api_key,
+                    http_options=gtypes.HttpOptions(api_version=api_ver),
+                )
+                response = vc.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=gtypes.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"]
+                    ),
+                )
+                for part in response.candidates[0].content.parts:
+                    if part.inline_data is not None:
+                        img = Image.open(io.BytesIO(part.inline_data.data)).convert("RGBA")
+                        return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+            except Exception as e:
+                last_error = e
+                continue
 
     # generateContent 全滅 → Imagen 3（課金ユーザー向け）
-    for imagen_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001"]:
-        try:
-            response = gclient.models.generate_images(
-                model=imagen_model,
-                prompt=prompt,
-                config=gtypes.GenerateImagesConfig(number_of_images=1),
-            )
-            img_bytes = response.generated_images[0].image.image_bytes
-            img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-            return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
-        except Exception as e:
-            last_error = e
+    for imagen_model in ["imagen-3.0-generate-002", "imagen-3.0-fast-generate-001",
+                         "imagen-4.0-generate-preview-05-20"]:
+        for api_ver in ["v1alpha", "v1beta"]:
+            try:
+                vc = gai.Client(
+                    api_key=api_key,
+                    http_options=gtypes.HttpOptions(api_version=api_ver),
+                )
+                response = vc.models.generate_images(
+                    model=imagen_model,
+                    prompt=prompt,
+                    config=gtypes.GenerateImagesConfig(number_of_images=1),
+                )
+                img_bytes = response.generated_images[0].image.image_bytes
+                img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                return img.resize((STAMP_W, STAMP_H), Image.LANCZOS)
+            except Exception as e:
+                last_error = e
 
     raise ValueError(
-        f"Geminiで画像生成できませんでした。利用可能な画像生成モデルが見つかりません。\n詳細: {last_error}"
+        f"Geminiで画像生成できませんでした。\n"
+        f"無料Gemini APIでは現在画像生成が利用できない可能性があります。\n"
+        f"詳細: {last_error}"
     )
 
 
