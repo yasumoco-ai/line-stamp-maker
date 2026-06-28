@@ -10,7 +10,7 @@ def parse_stamp_block(text: str) -> list[dict]:
                "expression": str, "character_desc": str, "art_style": str}, ...]
     """
     separator_pattern = re.compile(
-        r'={10,}\s*\n\s*No\.(\d+)[「『]([^」』]+)[」』]\s*\n\s*={10,}',
+        r'={8,}[^\n]*\n\s*No\.(\d+)\s*[「『]([^」』\n]+)[」』][^\n]*\n\s*={8,}',
         re.MULTILINE
     )
     matches = list(separator_pattern.finditer(text))
@@ -20,7 +20,8 @@ def parse_stamp_block(text: str) -> list[dict]:
     stamps = []
     for i, match in enumerate(matches):
         number = int(match.group(1))
-        phrase = match.group(2).strip()
+        # 二重かっこ「「...」」などに対応：前後の余分な括弧を除去
+        phrase = match.group(2).strip().lstrip('「『').rstrip('」』')
 
         start = match.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
