@@ -204,12 +204,47 @@ def _draw_chars(draw, text, font, x0, y0, effect, fill):
         x += _char_width(ch, font)
 
 
+_EMOJI_RE = __import__('re').compile(
+    "[\U00010000-\U0010FFFF"   # サロゲートペア絵文字
+    "\U0001F000-\U0001FFFF"
+    "☀-➿"            # 記号・絵文字ブロック
+    "︀-️"            # 異体字セレクタ
+    "‍"                   # ゼロ幅接合子
+    "]+",
+    __import__('re').UNICODE,
+)
+
+# スタイル未指定時のカラーローテーション（スタンプ番号で循環）
+_AUTO_COLORS: list[tuple[tuple, tuple]] = [
+    ((255, 170, 0),  (220, 100, 0)),   # オレンジ
+    ((255, 90, 50),  (220, 40, 20)),   # オレンジレッド
+    ((60, 200, 80),  (0, 140, 40)),    # グリーン
+    ((100, 200, 255),(0, 130, 220)),   # スカイブルー
+    ((255, 100, 160),(220, 40, 120)),  # ピンク
+    ((180, 80, 220), (120, 40, 180)),  # パープル
+    ((255, 210, 0),  (180, 130, 0)),   # ゴールド
+    ((0, 210, 200),  (0, 155, 155)),   # ターコイズ
+]
+_auto_color_index: list[int] = [0]   # ミュータブルカウンタ
+
+
 def add_styled_text(stamp: Image.Image, phrase: str, text_style: str) -> Image.Image:
     """Pillowでグラデーション＋縁取り＋影のテキストをスタンプに合成。"""
-    if not phrase.strip():
+    # 絵文字を除去（フォントが対応していないため□になる）
+    phrase = _EMOJI_RE.sub("", phrase).strip()
+    if not phrase:
         return stamp
 
     style = _parse_text_style(text_style)
+
+    # カラー未指定（デフォルト暗色）ならローテーション色を使う
+    if tuple(style["grad"][0]) == _DEFAULT_GRAD[0] and tuple(style["grad"][1]) == _DEFAULT_GRAD[1]:
+        idx = _auto_color_index[0] % len(_AUTO_COLORS)
+        _auto_color_index[0] += 1
+        c1, c2 = _AUTO_COLORS[idx]
+        style["grad"] = [c1, c2]
+        style["outline"] = (255, 255, 255)   # 明色フォントには白フチ
+        style["outline_w"] = 5
     font_key = style["font_key"]
     ow = style["outline_w"]
     margin = 14
