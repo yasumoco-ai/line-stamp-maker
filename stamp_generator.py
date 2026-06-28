@@ -293,37 +293,75 @@ def add_styled_text(stamp: Image.Image, phrase: str, text_style: str) -> Image.I
 
 
 # ── 画像生成 ────────────────────────────────────────────────────
+# よく使われる日本語ビジュアル用語の英訳マッピング
+_JP_VISUAL_TERMS = [
+    ("フクロウ", "owl"), ("ふくろう", "owl"),
+    ("ネコ", "cat"), ("猫", "cat"), ("ねこ", "cat"),
+    ("イヌ", "dog"), ("犬", "dog"),
+    ("クマ", "bear"), ("熊", "bear"),
+    ("ウサギ", "rabbit"), ("うさぎ", "rabbit"),
+    ("ミントグリーン", "mint green"), ("ミント色", "mint color"),
+    ("水色", "light blue"), ("スカイブルー", "sky blue"),
+    ("オレンジ", "orange"), ("黄色", "yellow"), ("赤", "red"),
+    ("ピンク", "pink"), ("紫", "purple"), ("緑", "green"), ("青", "blue"),
+    ("白", "white"), ("黒", "black"), ("茶色", "brown"),
+    ("キラキラ", "sparkling glittering"), ("キラ", "glittering"),
+    ("くちばし", "beak"), ("嘴", "beak"),
+    ("羽毛", "fluffy feathers"), ("羽", "wings/feathers"),
+    ("ふわふわ", "fluffy soft"), ("もふもふ", "fluffy"),
+    ("まんまる", "perfectly round"), ("丸い", "round"), ("ぷっくり", "chubby"),
+    ("大きな目", "large big eyes"), ("目", "eyes"),
+    ("耳", "ears"), ("しっぽ", "tail"), ("尻尾", "tail"),
+    ("ゆるい", "cute simple"), ("ちびキャラ", "chibi"),
+]
+
+
+def _add_english_hints(japanese_text: str) -> str:
+    """日本語テキストから英語キーワードを抽出してヒントとして追加。"""
+    found = []
+    for jp, en in _JP_VISUAL_TERMS:
+        if jp in japanese_text and en not in found:
+            found.append(en)
+    return ", ".join(found) if found else ""
+
+
 def build_image_prompt(
     character_desc: str,
     art_style: str,
     expression: str,
 ) -> str:
     """テキストなし・キャラクター＋ポーズのみのプロンプトを構築。
-    ポーズを冒頭に置く（画像生成AIは冒頭を最優先するため）。"""
+    キャラクター設定を最優先に冒頭配置（FLUXは冒頭を最優先するため）。"""
     parts = []
 
-    # ① ポーズ・表情を最初に（最優先）
+    # ① キャラクター設定（最優先・冒頭）
+    if character_desc.strip():
+        en_hints = _add_english_hints(character_desc)
+        char_block = (
+            "CHARACTER DESIGN — follow strictly, this is the most important part:\n"
+            f"{character_desc.strip()}"
+        )
+        if en_hints:
+            char_block += f"\n[Visual keywords: {en_hints}]"
+        parts.append(char_block)
+
+    # ② ポーズ・表情（具体的なシーン）
     if expression.strip():
         parts.append(
-            f"SCENE: {expression.strip()}\n"
-            "Execute this with MAXIMUM exaggeration — "
-            "over-the-top anime reaction, explosive movement, "
-            "body twisted mid-action, face full of emotion."
+            "POSE & EXPRESSION — execute with MAXIMUM exaggeration:\n"
+            f"{expression.strip()}\n"
+            "Over-the-top anime reaction, explosive energy, face full of emotion."
         )
-
-    # ② キャラクター設定
-    if character_desc.strip():
-        parts.append(f"CHARACTER: {character_desc.strip()}")
 
     # ③ 画風
     if art_style.strip():
-        parts.append(f"STYLE: {art_style.strip()}")
+        parts.append(f"ART STYLE:\n{art_style.strip()}")
 
-    # ④ 共通指示（後ろに置く）
+    # ④ 共通フォーマット指示（末尾）
     parts.append(
         "FORMAT: LINE sticker illustration, 1024x1024px, transparent background, "
         "character large at center, NO text or letters anywhere in the image, "
-        "motion lines and speed effects, expressive eyes, dynamic composition."
+        "dynamic composition, motion lines."
     )
 
     return "\n\n".join(parts)
