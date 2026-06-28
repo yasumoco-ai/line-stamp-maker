@@ -306,12 +306,19 @@ def generate_character_image(
 
 def _gemini_rest(api_key: str, api_ver: str, model: str, payload: dict) -> dict:
     """Gemini REST APIに直接POSTする（Pythonライブラリのエンコードバグを回避）。"""
+    import json as _json
     import requests as _req
     url = (
         f"https://generativelanguage.googleapis.com/{api_ver}"
         f"/models/{model}:generateContent?key={api_key}"
     )
-    resp = _req.post(url, json=payload, timeout=120)
+    # ensure_ascii=False で日本語をそのままUTF-8で送信（ASCIIエラー回避）
+    body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    resp = _req.post(
+        url, data=body,
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        timeout=120,
+    )
     if resp.status_code != 200:
         raise ValueError(f"HTTP {resp.status_code}: {resp.text[:300]}")
     return resp.json()
